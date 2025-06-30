@@ -2,6 +2,8 @@ use std::env;
 use std::fs;
 use std::io::{self, Write};
 
+use codecrafters_interpreter::lexer::Lexer;
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
@@ -22,11 +24,14 @@ fn main() {
                 String::new()
             });
 
-            // Uncomment this block to pass the first stage
-            if !file_contents.is_empty() {
-                panic!("Scanner not implemented");
-            } else {
-                println!("EOF  null"); // Placeholder, replace this line when implementing the scanner
+            for token in Lexer::new(&file_contents) {
+                let token = token.unwrap();
+                println!(
+                    "{} {} {}",
+                    token.value().diag_name(),
+                    token.lexeme(),
+                    token.value().payload().diag_value()
+                );
             }
         }
         _ => {
