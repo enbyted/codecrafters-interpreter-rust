@@ -3,13 +3,15 @@ use itertools::Itertools;
 
 fn test_tokenize(input: &str, expected_tokens: impl IntoIterator<Item = &'static str>) {
     for (token, expected) in Lexer::new(input).zip_eq(expected_tokens) {
-        let token = token.unwrap();
-        let value = format!(
-            "{} {} {}",
-            token.value().diag_name(),
-            token.lexeme(),
-            token.value().payload().diag_value()
-        );
+        let value = match token {
+            Err(error) => error.cc_format(),
+            Ok(token) => format!(
+                "{} {} {}",
+                token.value().diag_name(),
+                token.lexeme(),
+                token.value().payload().diag_value()
+            ),
+        };
         assert_eq!(value, expected);
     }
 }
@@ -55,6 +57,21 @@ fn single_char_tokens() {
             "STAR * null",
             "RIGHT_BRACE } null",
             "RIGHT_PAREN ) null",
+            "EOF  null",
+        ],
+    );
+}
+
+#[test]
+fn simple_errors() {
+    test_tokenize(
+        ",.$(#",
+        [
+            "COMMA , null",
+            "DOT . null",
+            "[line 1] Error: Unexpected character: $",
+            "LEFT_PAREN ( null",
+            "[line 1] Error: Unexpected character: #",
             "EOF  null",
         ],
     );

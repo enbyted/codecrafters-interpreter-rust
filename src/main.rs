@@ -4,11 +4,24 @@ use std::io::{self, Write};
 
 use codecrafters_interpreter::lexer::Lexer;
 
-fn main() {
+enum ResultCode {
+    Ok,
+    HasLexingErrors,
+}
+impl std::process::Termination for ResultCode {
+    fn report(self) -> std::process::ExitCode {
+        match self {
+            ResultCode::Ok => 0.into(),
+            ResultCode::HasLexingErrors => 65.into(),
+        }
+    }
+}
+
+fn main() -> ResultCode {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
         writeln!(io::stderr(), "Usage: {} tokenize <filename>", args[0]).unwrap();
-        return;
+        return ResultCode::Ok;
     }
 
     let command = &args[1];
@@ -24,8 +37,21 @@ fn main() {
                 String::new()
             });
 
+            let mut errors = Vec::new();
+            let mut tokens = Vec::new();
+
             for token in Lexer::new(&file_contents) {
-                let token = token.unwrap();
+                match token {
+                    Ok(token) => tokens.push(token),
+                    Err(error) => errors.push(error),
+                }
+            }
+
+            for error in &errors {
+                eprintln!("{}", error.cc_format());
+            }
+
+            for token in tokens {
                 println!(
                     "{} {} {}",
                     token.value().diag_name(),
@@ -33,10 +59,16 @@ fn main() {
                     token.value().payload().diag_value()
                 );
             }
+
+            if errors.is_empty() {
+                ResultCode::Ok
+            } else {
+                ResultCode::HasLexingErrors
+            }
         }
         _ => {
             writeln!(io::stderr(), "Unknown command: {}", command).unwrap();
-            return;
+            return ResultCode::Ok;
         }
     }
 }
