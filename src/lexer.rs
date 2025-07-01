@@ -70,6 +70,7 @@ impl TokenPayload {
 #[logos(error = LexerError)]
 #[logos(extras = LexerExtras)]
 #[logos(skip r"[ \t\f]+")]
+#[logos(skip r"//[^\n]*")]
 pub enum TokenValue {
     #[regex(r"\n", newline_callback)]
     Newline,

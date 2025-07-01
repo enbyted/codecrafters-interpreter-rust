@@ -118,3 +118,19 @@ fn relational_operators() {
         ],
     );
 }
+
+#[test]
+fn comment() {
+    test_tokenize(
+        r"{
+        // Test
+        =
+    }",
+        [
+            "LEFT_BRACE { null",
+            "EQUAL = null",
+            "RIGHT_BRACE } null",
+            "EOF  null",
+        ],
+    );
+}
