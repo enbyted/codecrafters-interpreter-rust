@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use std::io::{self, Write};
 
+use codecrafters_interpreter::ast;
 use codecrafters_interpreter::lexer::Lexer;
 
 enum ResultCode {
@@ -58,6 +59,28 @@ fn main() -> ResultCode {
                     token.lexeme(),
                     token.value().payload().diag_value()
                 );
+            }
+
+            if errors.is_empty() {
+                ResultCode::Ok
+            } else {
+                ResultCode::HasLexingErrors
+            }
+        }
+        "parse" => {
+            let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
+                writeln!(io::stderr(), "Failed to read file {}", filename).unwrap();
+                String::new()
+            });
+
+            let mut errors = Vec::new();
+            let program = ast::parse(Lexer::new(&file_contents), &mut errors);
+            for error in &errors {
+                eprintln!("{error}");
+            }
+            for expr in program.exprs {
+                expr.value().diag_print(&mut std::io::stdout()).unwrap();
+                println!();
             }
 
             if errors.is_empty() {
