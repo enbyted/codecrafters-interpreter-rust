@@ -4,6 +4,7 @@ use std::borrow::Cow;
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum LexerErrorKind {
     UnexpectedCharacter(char),
+    UnterminatedString,
     #[default]
     Other,
 }
@@ -18,6 +19,13 @@ impl LexerError {
         let character = lex.slice().chars().next().unwrap();
         Self {
             kind: LexerErrorKind::UnexpectedCharacter(character),
+            line: Some(lex.extras.line),
+        }
+    }
+
+    fn unterminated_string(lex: &logos::Lexer<'_, TokenValue>) -> Self {
+        Self {
+            kind: LexerErrorKind::UnterminatedString,
             line: Some(lex.extras.line),
         }
     }
@@ -39,6 +47,7 @@ impl LexerError {
                 format!("Unexpected character: {character}")
             }
             LexerErrorKind::Other => format!("Unexpected error"),
+            LexerErrorKind::UnterminatedString => format!("Unterminated string."),
         }
     }
 
@@ -127,7 +136,9 @@ pub enum TokenValue {
     GreaterEqual,
 
     #[regex(r#""[^"]*""#, |v| Some(String::from(&v.slice()[1..v.slice().len()-1])))]
+    #[regex(r#""[^"]*"#, |v| Err(LexerError::unterminated_string(v)))]
     String(String),
+
     #[regex(r"[0-9]+", |v| v.slice().parse().map_err(|e| LexerError::from_parse_float(v, e)))]
     #[regex(r"[0-9]+\.[0-9]+", |v| v.slice().parse().map_err(|e| LexerError::from_parse_float(v, e)))]
     Number(f64),

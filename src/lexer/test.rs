@@ -147,3 +147,11 @@ fn literals() {
         ],
     );
 }
+
+#[test]
+fn unterminated_string() {
+    test_tokenize(
+        r#""test"#,
+        ["[line 1] Error: Unterminated string.", "EOF  null"],
+    );
+}
