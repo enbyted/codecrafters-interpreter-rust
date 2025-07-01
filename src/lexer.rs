@@ -96,6 +96,24 @@ pub enum TokenValue {
     Minus,
     #[token("/")]
     Slash,
+
+    #[token("=")]
+    Equal,
+    #[token("==")]
+    EqualEqual,
+    #[token("!")]
+    Bang,
+    #[token("!=")]
+    BangEqual,
+    #[token("<")]
+    Less,
+    #[token("<=")]
+    LessEqual,
+    #[token(">")]
+    Greater,
+    #[token(">=")]
+    GreaterEqual,
+
     Eof,
 }
 impl TokenValue {
@@ -113,6 +131,14 @@ impl TokenValue {
             TokenValue::Plus => "PLUS",
             TokenValue::Minus => "MINUS",
             TokenValue::Slash => "SLASH",
+            TokenValue::Equal => "EQUAL",
+            TokenValue::EqualEqual => "EQUAL_EQUAL",
+            TokenValue::Bang => "BANG",
+            TokenValue::BangEqual => "BANG_EQUAL",
+            TokenValue::Less => "LESS",
+            TokenValue::LessEqual => "LESS_EQUAL",
+            TokenValue::Greater => "GREATER",
+            TokenValue::GreaterEqual => "GREATER_EQUAL",
             TokenValue::Eof => "EOF",
         }
     }
@@ -131,6 +157,14 @@ impl TokenValue {
             | TokenValue::Semicolon
             | TokenValue::Plus
             | TokenValue::Minus
+            | TokenValue::Equal
+            | TokenValue::EqualEqual
+            | TokenValue::Bang
+            | TokenValue::BangEqual
+            | TokenValue::Less
+            | TokenValue::LessEqual
+            | TokenValue::Greater
+            | TokenValue::GreaterEqual
             | TokenValue::Slash => TokenPayload::Null,
         }
     }

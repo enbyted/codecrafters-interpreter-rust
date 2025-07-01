@@ -76,3 +76,45 @@ fn simple_errors() {
         ],
     );
 }
+
+#[test]
+fn assign_and_equal() {
+    test_tokenize(
+        "={===}",
+        [
+            "EQUAL = null",
+            "LEFT_BRACE { null",
+            "EQUAL_EQUAL == null",
+            "EQUAL = null",
+            "RIGHT_BRACE } null",
+            "EOF  null",
+        ],
+    );
+}
+
+#[test]
+fn negation_inequality() {
+    test_tokenize(
+        "!!===",
+        [
+            "BANG ! null",
+            "BANG_EQUAL != null",
+            "EQUAL_EQUAL == null",
+            "EOF  null",
+        ],
+    );
+}
+
+#[test]
+fn relational_operators() {
+    test_tokenize(
+        "<<=>>=",
+        [
+            "LESS < null",
+            "LESS_EQUAL <= null",
+            "GREATER > null",
+            "GREATER_EQUAL >= null",
+            "EOF  null",
+        ],
+    );
+}
