@@ -22,6 +22,13 @@ impl LexerError {
         }
     }
 
+    fn from_parse_float(
+        lex: &logos::Lexer<'_, TokenValue>,
+        error: std::num::ParseFloatError,
+    ) -> Self {
+        todo!()
+    }
+
     pub fn line(&self) -> Option<usize> {
         self.line
     }
@@ -57,11 +64,15 @@ impl Default for LexerExtras {
 #[derive(Debug)]
 pub enum TokenPayload {
     Null,
+    String(String),
+    Number(f64),
 }
 impl TokenPayload {
     pub fn diag_value(&self) -> Cow<'_, str> {
         match self {
             TokenPayload::Null => "null".into(),
+            TokenPayload::String(v) => Cow::Borrowed(v),
+            TokenPayload::Number(v) => format!("{v:?}").into(),
         }
     }
 }
@@ -115,6 +126,12 @@ pub enum TokenValue {
     #[token(">=")]
     GreaterEqual,
 
+    #[regex(r#""[^"]*""#, |v| Some(String::from(&v.slice()[1..v.slice().len()-1])))]
+    String(String),
+    #[regex(r"[0-9]+", |v| v.slice().parse().map_err(|e| LexerError::from_parse_float(v, e)))]
+    #[regex(r"[0-9]+\.[0-9]+", |v| v.slice().parse().map_err(|e| LexerError::from_parse_float(v, e)))]
+    Number(f64),
+
     Eof,
 }
 impl TokenValue {
@@ -140,6 +157,8 @@ impl TokenValue {
             TokenValue::LessEqual => "LESS_EQUAL",
             TokenValue::Greater => "GREATER",
             TokenValue::GreaterEqual => "GREATER_EQUAL",
+            TokenValue::String(_) => "STRING",
+            TokenValue::Number(_) => "NUMBER",
             TokenValue::Eof => "EOF",
         }
     }
@@ -167,6 +186,8 @@ impl TokenValue {
             | TokenValue::Greater
             | TokenValue::GreaterEqual
             | TokenValue::Slash => TokenPayload::Null,
+            TokenValue::String(v) => TokenPayload::String(v.clone()),
+            TokenValue::Number(v) => TokenPayload::Number(*v),
         }
     }
 }

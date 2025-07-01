@@ -134,3 +134,16 @@ fn comment() {
         ],
     );
 }
+
+#[test]
+fn literals() {
+    test_tokenize(
+        r#"123 456.789 "abc def""#,
+        [
+            "NUMBER 123 123.0",
+            "NUMBER 456.789 456.789",
+            r#"STRING "abc def" abc def"#,
+            "EOF  null",
+        ],
+    );
+}
