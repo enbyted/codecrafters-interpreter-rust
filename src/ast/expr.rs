@@ -82,7 +82,7 @@ pub enum Expression {
 impl Expression {
     pub fn diag_print(&self, out: &mut impl std::io::Write) -> std::io::Result<()> {
         match self {
-            Expression::LiteralString(v) => write!(out, r#""{v}""#),
+            Expression::LiteralString(v) => write!(out, r"{v}"),
             Expression::LiteralNumber(v) => write!(out, "{v:?}"),
             Expression::LiteralBool(true) => write!(out, "true"),
             Expression::LiteralBool(false) => write!(out, "false"),
