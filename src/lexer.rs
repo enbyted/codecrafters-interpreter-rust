@@ -143,6 +143,42 @@ pub enum TokenValue {
     #[regex(r"[0-9]+\.[0-9]+", |v| v.slice().parse().map_err(|e| LexerError::from_parse_float(v, e)))]
     Number(f64),
 
+    #[token("and")]
+    KwAnd,
+    #[token("class")]
+    KwClass,
+    #[token("else")]
+    KwElse,
+    #[token("false")]
+    KwFalse,
+    #[token("for")]
+    KwFor,
+    #[token("fun")]
+    KwFun,
+    #[token("if")]
+    KwIf,
+    #[token("nil")]
+    KwNil,
+    #[token("or")]
+    KwOr,
+    #[token("print")]
+    KwPrint,
+    #[token("return")]
+    KwReturn,
+    #[token("super")]
+    KwSuper,
+    #[token("this")]
+    KwThis,
+    #[token("true")]
+    KwTrue,
+    #[token("var")]
+    KwVar,
+    #[token("while")]
+    KwWhile,
+
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
+    Identifier,
+
     Eof,
 }
 impl TokenValue {
@@ -171,6 +207,23 @@ impl TokenValue {
             TokenValue::String(_) => "STRING",
             TokenValue::Number(_) => "NUMBER",
             TokenValue::Eof => "EOF",
+            TokenValue::KwAnd => "AND",
+            TokenValue::KwClass => "CLASS",
+            TokenValue::KwElse => "ELSE",
+            TokenValue::KwFalse => "FALSE",
+            TokenValue::KwFor => "FOR",
+            TokenValue::KwFun => "FUN",
+            TokenValue::KwIf => "IF",
+            TokenValue::KwNil => "NIL",
+            TokenValue::KwOr => "OR",
+            TokenValue::KwPrint => "PRINT",
+            TokenValue::KwReturn => "RETURN",
+            TokenValue::KwSuper => "SUPER",
+            TokenValue::KwThis => "THIS",
+            TokenValue::KwTrue => "TRUE",
+            TokenValue::KwVar => "VAR",
+            TokenValue::KwWhile => "WHILE",
+            TokenValue::Identifier => "IDENTIFIER",
         }
     }
 
@@ -196,7 +249,24 @@ impl TokenValue {
             | TokenValue::LessEqual
             | TokenValue::Greater
             | TokenValue::GreaterEqual
-            | TokenValue::Slash => TokenPayload::Null,
+            | TokenValue::Slash
+            | TokenValue::KwClass
+            | TokenValue::KwElse
+            | TokenValue::KwFalse
+            | TokenValue::KwFor
+            | TokenValue::KwFun
+            | TokenValue::KwIf
+            | TokenValue::KwNil
+            | TokenValue::KwOr
+            | TokenValue::KwPrint
+            | TokenValue::KwReturn
+            | TokenValue::KwSuper
+            | TokenValue::KwThis
+            | TokenValue::KwTrue
+            | TokenValue::KwVar
+            | TokenValue::KwWhile
+            | TokenValue::Identifier
+            | TokenValue::KwAnd => TokenPayload::Null,
             TokenValue::String(v) => TokenPayload::String(v.clone()),
             TokenValue::Number(v) => TokenPayload::Number(*v),
         }
