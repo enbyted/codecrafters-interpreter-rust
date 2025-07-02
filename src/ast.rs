@@ -3,6 +3,7 @@ use std::ops::Range;
 use crate::{
     ast::parser::{ParseError, Parser, ParserState},
     lexer::{LexerError, Span, Token},
+    vm,
 };
 
 mod expr;
@@ -37,18 +38,27 @@ impl Program {
 
         Self { exprs }
     }
+
+    pub fn compile(self) -> vm::Program {
+        let mut instructions = Vec::new();
+        for expr in self.exprs {
+            let span = expr.span();
+            expr.value.compile(span.clone(), &mut instructions);
+            instructions.push(Spanned::new(span.clone(), vm::Instruction::Print));
+            instructions.push(Spanned::new(span, vm::Instruction::Pop));
+        }
+
+        vm::Program { instructions }
+    }
 }
 
 pub struct Spanned<T> {
     value: T,
-    span: Range<usize>,
+    span: Span,
 }
 impl<T> Spanned<T> {
     fn new(span: Span, value: T) -> Self {
-        Spanned {
-            value,
-            span: span.range,
-        }
+        Spanned { value, span }
     }
 
     fn boxed(span: Span, value: T) -> Box<Self> {
@@ -64,6 +74,10 @@ impl<T> Spanned<T> {
     }
 
     pub fn range(&self) -> Range<usize> {
+        self.span.range.clone()
+    }
+
+    pub fn span(&self) -> Span {
         self.span.clone()
     }
 }

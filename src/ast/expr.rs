@@ -3,7 +3,8 @@ use crate::{
         parser::{ExpectedToken, ParseError},
         Parser, Spanned,
     },
-    lexer::{TokenKind, TokenValue},
+    lexer::{Span, TokenKind, TokenValue},
+    vm,
 };
 
 pub(super) fn parse(
@@ -15,10 +16,7 @@ pub(super) fn parse(
     let span = parser.end_span(span);
 
     match expr {
-        Ok(expr) => Some(Spanned {
-            value: expr,
-            span: span.range,
-        }),
+        Ok(expr) => Some(Spanned::new(span, expr)),
         Err(error) => {
             errors.push(error);
             // TODO: synchronize
@@ -103,6 +101,64 @@ impl Expression {
                 write!(out, " ")?;
                 right.value().diag_print(out)?;
                 write!(out, ")")
+            }
+        }
+    }
+
+    pub(super) fn compile(self, span: Span, instructions: &mut Vec<Spanned<vm::Instruction>>) {
+        match self {
+            Expression::LiteralString(value) => {
+                instructions.push(Spanned::new(span, vm::Instruction::PushString(value)))
+            }
+            Expression::LiteralNumber(value) => {
+                instructions.push(Spanned::new(span, vm::Instruction::PushNumber(value)))
+            }
+            Expression::LiteralBool(value) => {
+                instructions.push(Spanned::new(span, vm::Instruction::PushBool(value)))
+            }
+            Expression::LiteralNil => {
+                instructions.push(Spanned::new(span, vm::Instruction::PushNil))
+            }
+            Expression::Group(spanned) => spanned.value.compile(span, instructions),
+            Expression::Unary(unary_op, spanned) => {
+                spanned.value.compile(spanned.span, instructions);
+                match unary_op {
+                    UnaryOp::Negate => {
+                        instructions.push(Spanned::new(span, vm::Instruction::Negate))
+                    }
+                    UnaryOp::LogicalNot => {
+                        instructions.push(Spanned::new(span, vm::Instruction::LogicalNot))
+                    }
+                }
+            }
+            Expression::Binary(left, op, right) => {
+                left.value.compile(left.span, instructions);
+                right.value.compile(right.span, instructions);
+                match op {
+                    BinaryOp::Mul => instructions.push(Spanned::new(span, vm::Instruction::Mul)),
+                    BinaryOp::Div => instructions.push(Spanned::new(span, vm::Instruction::Div)),
+                    BinaryOp::Add => instructions.push(Spanned::new(span, vm::Instruction::Add)),
+                    BinaryOp::Sub => instructions.push(Spanned::new(span, vm::Instruction::Sub)),
+                    BinaryOp::Lt => instructions.push(Spanned::new(span, vm::Instruction::Less)),
+                    BinaryOp::Gt => {
+                        instructions.push(Spanned::new(span.clone(), vm::Instruction::LessOrEqual));
+                        instructions.push(Spanned::new(span, vm::Instruction::LogicalNot));
+                    }
+                    BinaryOp::Lte => {
+                        instructions.push(Spanned::new(span, vm::Instruction::LessOrEqual))
+                    }
+                    BinaryOp::Gte => {
+                        instructions.push(Spanned::new(span.clone(), vm::Instruction::Less));
+                        instructions.push(Spanned::new(span, vm::Instruction::LogicalNot));
+                    }
+                    BinaryOp::Eq => {
+                        instructions.push(Spanned::new(span, vm::Instruction::Equal));
+                    }
+                    BinaryOp::Neq => {
+                        instructions.push(Spanned::new(span.clone(), vm::Instruction::Equal));
+                        instructions.push(Spanned::new(span, vm::Instruction::LogicalNot));
+                    }
+                }
             }
         }
     }
