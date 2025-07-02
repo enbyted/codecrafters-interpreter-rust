@@ -17,7 +17,7 @@ impl std::process::Termination for ResultCode {
         match self {
             ResultCode::Ok => 0.into(),
             ResultCode::HasLexingErrors => 65.into(),
-            ResultCode::ExecutionError => 66.into(), // TODO: check the value
+            ResultCode::ExecutionError => 70.into(),
         }
     }
 }
