@@ -53,7 +53,7 @@ pub trait ExecutionEnv {
 }
 
 #[derive(Debug, Error)]
-#[error("[line {line}] {message}")]
+#[error("{message}\n[line {line}]")]
 pub struct RuntimeError {
     line: usize,
     message: String,
@@ -71,7 +71,6 @@ trait RuntimeErrorExt<T> {
 }
 impl<T> RuntimeErrorExt<T> for Result<T, RuntimeError> {
     fn with_message(self, message: impl Into<String>) -> Result<T, RuntimeError> {
-        return self;
         self.map_err(|e| RuntimeError {
             line: e.line,
             message: message.into(),
