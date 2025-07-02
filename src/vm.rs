@@ -112,7 +112,7 @@ impl<'env> Vm<'env> {
                 }
                 Instruction::Print => match self.stack.last() {
                     Some(Value::String(value)) => self.env.print(value),
-                    Some(Value::Number(value)) => self.env.print(&format!("{value:?}")),
+                    Some(Value::Number(value)) => self.env.print(&format!("{value}")),
                     Some(Value::Nil) => self.env.print("nil"),
                     Some(Value::Bool(true)) => self.env.print("true"),
                     Some(Value::Bool(false)) => self.env.print("false"),
