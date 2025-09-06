@@ -40,6 +40,10 @@ pub(crate) enum Instruction {
     ReadGlobal(String),
     // 0
     WriteGlobal(String),
+    // +1
+    ReadStackAbsolute(usize),
+    // 0
+    WriteStackAbsolute(usize),
 }
 
 pub struct Program {
@@ -226,6 +230,15 @@ impl<'env> Vm<'env> {
                     let name = name.clone();
                     let value = self.pop_value(instruction.span())?;
                     self.globals.insert(name, value.clone());
+                    self.stack.push(value);
+                }
+                Instruction::ReadStackAbsolute(index) => {
+                    self.stack.push(self.stack[*index].clone());
+                }
+                Instruction::WriteStackAbsolute(index) => {
+                    let index = *index;
+                    let value = self.pop_value(instruction.span())?;
+                    self.stack[index] = value.clone();
                     self.stack.push(value);
                 }
             }

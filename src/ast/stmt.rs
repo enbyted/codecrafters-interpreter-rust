@@ -1,5 +1,9 @@
 use crate::{
-    ast::{compiler::Compiler, parser::ExpectedToken, Expression, ParseError, Parser, Spanned},
+    ast::{
+        compiler::{Compiler, ScopeType},
+        parser::ExpectedToken,
+        Expression, ParseError, Parser, Spanned,
+    },
     lexer::{Span, TokenKind, TokenValue},
     vm,
 };
@@ -31,6 +35,7 @@ pub enum Statement {
         name: Spanned<String>,
         value: Option<Spanned<Expression>>,
     },
+    Block(Vec<Spanned<Statement>>),
 }
 impl Statement {
     pub(super) fn compile(self, span: Span, compiler: &mut Compiler) {
@@ -54,6 +59,13 @@ impl Statement {
                     compiler.push(span, vm::Instruction::PushNil);
                 }
                 compiler.write_variable(Spanned::new(name.span(), &name.value));
+            }
+            Statement::Block(statements) => {
+                compiler.enter_scope(ScopeType::Block);
+                for statement in statements {
+                    statement.value.compile(statement.span, compiler);
+                }
+                compiler.exit_scope();
             }
         }
     }
@@ -88,7 +100,10 @@ impl Statement {
         } else {
             None
         };
-        parser.consume(TokenKind::Semicolon, "Expect ';' after value.")?;
+        parser.consume(
+            TokenKind::Semicolon,
+            "Expect ';' after variable declaration.",
+        )?;
 
         Ok(Statement::VarDeclaration {
             name: Spanned::new(span, name),
@@ -99,9 +114,23 @@ impl Statement {
     fn parse_statement(parser: &mut impl Parser) -> Result<Statement, ParseError> {
         if parser.take(TokenKind::KwPrint).is_some() {
             Self::parse_print(parser)
+        } else if parser.take(TokenKind::LBrace).is_some() {
+            Self::parse_block(parser)
         } else {
             Self::parse_expr(parser)
         }
+    }
+
+    fn parse_block(parser: &mut impl Parser) -> Result<Statement, ParseError> {
+        let mut statements = Vec::new();
+        while parser.current().value() != TokenKind::RBrace && !parser.is_at_end() {
+            let span = parser.begin_span();
+            let statement = Self::parse_declarion(parser)?;
+            let span = parser.end_span(span);
+            statements.push(Spanned::new(span, statement));
+        }
+        parser.consume(TokenKind::RBrace, "Expect '}' after block.")?;
+        Ok(Statement::Block(statements))
     }
 
     fn parse_print(parser: &mut impl Parser) -> Result<Statement, ParseError> {

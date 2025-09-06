@@ -1,10 +1,24 @@
+var hello = "global";
+{
 var hello;
-hello = 1;
 print hello;
-
-print hello = 2;
+hello = "1";
 print hello;
-
+print "hello = " + hello;
+{
+    var test = "99";
+    print "test = " + test;
+    {
+        var hello = "inner";
+        print "test = " + test;
+        print "hello = " + hello;
+    }
+    print "test = " + test;
+}
+print hello = "2";
+print "hello = " + hello;
+}
+print "hello = " + hello;
 var test_global = "ab";
 print test_global;
 var empty_global;
