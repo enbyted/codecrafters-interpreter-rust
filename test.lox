@@ -1,5 +1,7 @@
 var test_global = "ab";
 print test_global;
+var empty_global;
+print empty_global;
 
 print true;
 print false;

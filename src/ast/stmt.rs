@@ -50,8 +50,10 @@ impl Statement {
                 compiler.declare_variable(Spanned::new(name.span(), &name.value));
                 if let Some(value) = value {
                     value.value.compile(value.span, compiler);
-                    compiler.write_variable(Spanned::new(name.span(), &name.value));
+                } else {
+                    compiler.push(span, vm::Instruction::PushNil);
                 }
+                compiler.write_variable(Spanned::new(name.span(), &name.value));
             }
         }
     }
