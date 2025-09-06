@@ -127,6 +127,7 @@ pub(super) enum TokenKind {
     KwTrue,
     KwVar,
     KwWhile,
+    Identifier,
 }
 impl TokenKind {
     pub(super) fn symbol(&self) -> &'static str {
@@ -166,6 +167,7 @@ impl TokenKind {
             TokenKind::KwTrue => "true",
             TokenKind::KwVar => "var",
             TokenKind::KwWhile => "while",
+            TokenKind::Identifier => "IDENTIFIER",
         }
     }
 }
@@ -207,6 +209,7 @@ impl PartialEq<&TokenValue> for TokenKind {
             (TokenKind::KwTrue, TokenValue::KwTrue) => true,
             (TokenKind::KwVar, TokenValue::KwVar) => true,
             (TokenKind::KwWhile, TokenValue::KwWhile) => true,
+            (TokenKind::Identifier, TokenValue::Identifier(_)) => true,
             _ => false,
         }
     }
@@ -317,8 +320,8 @@ pub enum TokenValue {
     #[token("while")]
     KwWhile,
 
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
-    Identifier,
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |v| String::from(v.slice()))]
+    Identifier(String),
 
     Eof,
 }
@@ -365,7 +368,7 @@ impl TokenValue {
             TokenValue::KwTrue => "TRUE",
             TokenValue::KwVar => "VAR",
             TokenValue::KwWhile => "WHILE",
-            TokenValue::Identifier => "IDENTIFIER",
+            TokenValue::Identifier(_) => "IDENTIFIER",
         }
     }
 
@@ -408,7 +411,7 @@ impl TokenValue {
             | TokenValue::KwTrue
             | TokenValue::KwVar
             | TokenValue::KwWhile
-            | TokenValue::Identifier
+            | TokenValue::Identifier(_)
             | TokenValue::KwAnd => TokenPayload::Null,
             TokenValue::String(v) => TokenPayload::String(v.clone()),
             TokenValue::Number(v) => TokenPayload::Number(*v),

@@ -1,5 +1,5 @@
 use crate::{
-    ast::{parser::ParseError, Parser, Spanned},
+    ast::{compiler::Compiler, parser::ParseError, Parser, Spanned},
     lexer::{Span, TokenKind, TokenValue},
     vm,
 };
@@ -76,6 +76,7 @@ pub enum Expression {
     Group(Box<Spanned<Expression>>),
     Unary(UnaryOp, Box<Spanned<Expression>>),
     Binary(Box<Spanned<Expression>>, BinaryOp, Box<Spanned<Expression>>),
+    Variable(String),
 }
 impl Expression {
     pub fn diag_print(&self, out: &mut impl std::io::Write) -> std::io::Result<()> {
@@ -102,63 +103,59 @@ impl Expression {
                 right.value().diag_print(out)?;
                 write!(out, ")")
             }
+            Expression::Variable(name) => {
+                write!(out, "{name}")
+            }
         }
     }
 
-    pub(super) fn compile(self, span: Span, instructions: &mut Vec<Spanned<vm::Instruction>>) {
+    pub(super) fn compile(self, span: Span, compiler: &mut Compiler) {
         match self {
             Expression::LiteralString(value) => {
-                instructions.push(Spanned::new(span, vm::Instruction::PushString(value)))
+                compiler.push(span, vm::Instruction::PushString(value))
             }
             Expression::LiteralNumber(value) => {
-                instructions.push(Spanned::new(span, vm::Instruction::PushNumber(value)))
+                compiler.push(span, vm::Instruction::PushNumber(value))
             }
-            Expression::LiteralBool(value) => {
-                instructions.push(Spanned::new(span, vm::Instruction::PushBool(value)))
-            }
-            Expression::LiteralNil => {
-                instructions.push(Spanned::new(span, vm::Instruction::PushNil))
-            }
-            Expression::Group(spanned) => spanned.value.compile(span, instructions),
+            Expression::LiteralBool(value) => compiler.push(span, vm::Instruction::PushBool(value)),
+            Expression::LiteralNil => compiler.push(span, vm::Instruction::PushNil),
+            Expression::Group(spanned) => spanned.value.compile(span, compiler),
             Expression::Unary(unary_op, spanned) => {
-                spanned.value.compile(spanned.span, instructions);
+                spanned.value.compile(spanned.span, compiler);
                 match unary_op {
-                    UnaryOp::Negate => {
-                        instructions.push(Spanned::new(span, vm::Instruction::Negate))
-                    }
-                    UnaryOp::LogicalNot => {
-                        instructions.push(Spanned::new(span, vm::Instruction::LogicalNot))
-                    }
+                    UnaryOp::Negate => compiler.push(span, vm::Instruction::Negate),
+                    UnaryOp::LogicalNot => compiler.push(span, vm::Instruction::LogicalNot),
                 }
             }
             Expression::Binary(left, op, right) => {
-                left.value.compile(left.span, instructions);
-                right.value.compile(right.span, instructions);
+                left.value.compile(left.span, compiler);
+                right.value.compile(right.span, compiler);
                 match op {
-                    BinaryOp::Mul => instructions.push(Spanned::new(span, vm::Instruction::Mul)),
-                    BinaryOp::Div => instructions.push(Spanned::new(span, vm::Instruction::Div)),
-                    BinaryOp::Add => instructions.push(Spanned::new(span, vm::Instruction::Add)),
-                    BinaryOp::Sub => instructions.push(Spanned::new(span, vm::Instruction::Sub)),
-                    BinaryOp::Lt => instructions.push(Spanned::new(span, vm::Instruction::Less)),
+                    BinaryOp::Mul => compiler.push(span, vm::Instruction::Mul),
+                    BinaryOp::Div => compiler.push(span, vm::Instruction::Div),
+                    BinaryOp::Add => compiler.push(span, vm::Instruction::Add),
+                    BinaryOp::Sub => compiler.push(span, vm::Instruction::Sub),
+                    BinaryOp::Lt => compiler.push(span, vm::Instruction::Less),
                     BinaryOp::Gt => {
-                        instructions.push(Spanned::new(span.clone(), vm::Instruction::LessOrEqual));
-                        instructions.push(Spanned::new(span, vm::Instruction::LogicalNot));
+                        compiler.push(span.clone(), vm::Instruction::LessOrEqual);
+                        compiler.push(span, vm::Instruction::LogicalNot);
                     }
-                    BinaryOp::Lte => {
-                        instructions.push(Spanned::new(span, vm::Instruction::LessOrEqual))
-                    }
+                    BinaryOp::Lte => compiler.push(span, vm::Instruction::LessOrEqual),
                     BinaryOp::Gte => {
-                        instructions.push(Spanned::new(span.clone(), vm::Instruction::Less));
-                        instructions.push(Spanned::new(span, vm::Instruction::LogicalNot));
+                        compiler.push(span.clone(), vm::Instruction::Less);
+                        compiler.push(span, vm::Instruction::LogicalNot);
                     }
                     BinaryOp::Eq => {
-                        instructions.push(Spanned::new(span, vm::Instruction::Equal));
+                        compiler.push(span, vm::Instruction::Equal);
                     }
                     BinaryOp::Neq => {
-                        instructions.push(Spanned::new(span.clone(), vm::Instruction::Equal));
-                        instructions.push(Spanned::new(span, vm::Instruction::LogicalNot));
+                        compiler.push(span.clone(), vm::Instruction::Equal);
+                        compiler.push(span, vm::Instruction::LogicalNot);
                     }
                 }
+            }
+            Expression::Variable(name) => {
+                compiler.read_variable(Spanned::new(span, &name));
             }
         }
     }
@@ -248,6 +245,7 @@ impl Expression {
             TokenValue::KwNil => Some(Expression::LiteralNil),
             TokenValue::Number(lit) => Some(Expression::LiteralNumber(*lit)),
             TokenValue::String(lit) => Some(Expression::LiteralString(lit.clone())),
+            TokenValue::Identifier(name) => Some(Expression::Variable(name.clone())),
             _ => None,
         });
 

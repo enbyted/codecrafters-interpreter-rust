@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use thiserror::Error;
 
 use crate::{ast::Spanned, lexer::Span};
@@ -34,13 +36,17 @@ pub(crate) enum Instruction {
     Print,
     // -1
     Pop,
+    // +1
+    ReadGlobal(String),
+    // -1
+    WriteGlobal(String),
 }
 
 pub struct Program {
     pub(crate) instructions: Vec<Spanned<Instruction>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum Value {
     Nil,
     Bool(bool),
@@ -83,6 +89,7 @@ pub struct Vm<'env> {
     stack: Vec<Value>,
     program: Vec<Spanned<Instruction>>,
     pc: usize,
+    globals: HashMap<String, Value>,
 }
 impl<'env> Vm<'env> {
     pub fn new(env: &'env mut dyn ExecutionEnv, program: Program) -> Self {
@@ -91,6 +98,7 @@ impl<'env> Vm<'env> {
             stack: Vec::new(),
             program: program.instructions,
             pc: 0,
+            globals: HashMap::new(),
         }
     }
 
@@ -203,6 +211,21 @@ impl<'env> Vm<'env> {
                     let right = self.pop_value(span.clone())?;
                     let left = self.pop_value(span)?;
                     self.stack.push(Value::Bool(left == right));
+                }
+                Instruction::ReadGlobal(name) => {
+                    if let Some(value) = self.globals.get(name).clone() {
+                        self.stack.push(value.clone());
+                    } else {
+                        Err(RuntimeError::new(
+                            instruction.span(),
+                            format!("Undefined variable '{name}'."),
+                        ))?;
+                    }
+                }
+                Instruction::WriteGlobal(name) => {
+                    let name = name.clone();
+                    let value = self.pop_value(instruction.span())?;
+                    self.globals.insert(name, value);
                 }
             }
             self.pc += 1;

@@ -1,3 +1,6 @@
+var test_global = "ab";
+print test_global;
+
 print true;
 print false;
 print nil;

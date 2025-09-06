@@ -1,11 +1,15 @@
 use std::ops::Range;
 
 use crate::{
-    ast::parser::{ParseError, Parser, ParserState},
+    ast::{
+        compiler::Compiler,
+        parser::{ParseError, Parser, ParserState},
+    },
     lexer::{LexerError, Span, Token},
     vm,
 };
 
+mod compiler;
 mod expr;
 mod parser;
 mod stmt;
@@ -61,13 +65,13 @@ impl Program {
     }
 
     pub fn compile(self) -> vm::Program {
-        let mut instructions = Vec::new();
+        let mut compiler = Compiler::new();
         for expr in self.exprs {
             let span = expr.span();
-            expr.value.compile(span.clone(), &mut instructions);
+            expr.value.compile(span.clone(), &mut compiler);
         }
 
-        vm::Program { instructions }
+        compiler.finalize()
     }
 }
 

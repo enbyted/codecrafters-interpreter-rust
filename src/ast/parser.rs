@@ -7,8 +7,8 @@ use crate::lexer::{LexerError, Span, Token, TokenKind, TokenValue};
 #[derive(Debug, Clone, PartialEq, Error)]
 #[error("Expect '{}' {message}.", token.symbol())]
 pub(super) struct ExpectedToken {
-    token: TokenKind,
-    message: &'static str,
+    pub(super) token: TokenKind,
+    pub(super) message: &'static str,
 }
 
 #[derive(Debug, Error)]
