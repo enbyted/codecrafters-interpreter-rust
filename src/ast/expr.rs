@@ -1,5 +1,9 @@
 use crate::{
-    ast::{compiler::Compiler, parser::ParseError, Parser, Spanned},
+    ast::{
+        compiler::Compiler,
+        parser::{InvalidAssignmentTarget, ParseError},
+        Parser, Spanned,
+    },
     lexer::{Span, TokenKind, TokenValue},
     vm,
 };
@@ -77,6 +81,7 @@ pub enum Expression {
     Unary(UnaryOp, Box<Spanned<Expression>>),
     Binary(Box<Spanned<Expression>>, BinaryOp, Box<Spanned<Expression>>),
     Variable(String),
+    Assignement(Spanned<String>, Box<Spanned<Expression>>),
 }
 impl Expression {
     pub fn diag_print(&self, out: &mut impl std::io::Write) -> std::io::Result<()> {
@@ -105,6 +110,11 @@ impl Expression {
             }
             Expression::Variable(name) => {
                 write!(out, "{name}")
+            }
+            Expression::Assignement(name, value) => {
+                write!(out, "{} = ", name.value())?;
+                value.value().diag_print(out)?;
+                write!(out, ")")
             }
         }
     }
@@ -157,11 +167,40 @@ impl Expression {
             Expression::Variable(name) => {
                 compiler.read_variable(Spanned::new(span, &name));
             }
+            Expression::Assignement(name, value) => {
+                value.value.compile(value.span, compiler);
+                compiler.write_variable(Spanned::new(name.span(), name.value()));
+            }
         }
     }
 
     pub(super) fn parse(parser: &mut impl Parser) -> Result<Expression, ParseError> {
-        Self::parse_equality(parser)
+        Self::parse_assignment(parser)
+    }
+
+    fn parse_assignment(parser: &mut impl Parser) -> Result<Expression, ParseError> {
+        let left_span = parser.begin_span();
+        let left = Self::parse_equality(parser)?;
+        let left_span = parser.end_span(left_span);
+
+        let invalid_target_error = parser.error_here(InvalidAssignmentTarget);
+
+        if parser.take(TokenKind::Equal).is_some() {
+            let right_span = parser.begin_span();
+            let right = Self::parse_assignment(parser)?;
+            let right_span = parser.end_span(right_span);
+
+            if let Expression::Variable(name) = left {
+                return Ok(Expression::Assignement(
+                    Spanned::new(left_span, name),
+                    Spanned::boxed(right_span, right),
+                ));
+            }
+
+            return Err(invalid_target_error);
+        }
+
+        Ok(left)
     }
 
     fn parse_equality(parser: &mut impl Parser) -> Result<Expression, ParseError> {

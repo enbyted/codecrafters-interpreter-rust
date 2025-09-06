@@ -12,6 +12,10 @@ pub(super) struct ExpectedToken {
 }
 
 #[derive(Debug, Error)]
+#[error("Invalid assignment target.")]
+pub(super) struct InvalidAssignmentTarget;
+
+#[derive(Debug, Error)]
 #[error("[line {line}] Error {}: {inner}", self.location())]
 pub(super) struct ParseError {
     lexeme: Option<String>,
