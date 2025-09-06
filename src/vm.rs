@@ -38,7 +38,7 @@ pub(crate) enum Instruction {
     Pop,
     // +1
     ReadGlobal(String),
-    // -1
+    // 0
     WriteGlobal(String),
 }
 
@@ -225,7 +225,8 @@ impl<'env> Vm<'env> {
                 Instruction::WriteGlobal(name) => {
                     let name = name.clone();
                     let value = self.pop_value(instruction.span())?;
-                    self.globals.insert(name, value);
+                    self.globals.insert(name, value.clone());
+                    self.stack.push(value);
                 }
             }
             self.pc += 1;
