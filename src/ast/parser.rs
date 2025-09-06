@@ -68,6 +68,15 @@ pub(super) trait Parser {
         }
     }
 
+    fn take(&mut self, kind: TokenKind) -> Option<TokenValue> {
+        if self.current().value() == kind {
+            self.advance();
+            Some(self.previous().value().clone())
+        } else {
+            None
+        }
+    }
+
     fn consume(&mut self, kind: TokenKind, message: &'static str) -> Result<(), ParseError> {
         if self.current().value() == kind {
             self.advance();

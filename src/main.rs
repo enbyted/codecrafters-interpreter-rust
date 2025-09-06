@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{self, Write};
 
 use codecrafters_interpreter::ast;
+use codecrafters_interpreter::ast::Statement;
 use codecrafters_interpreter::lexer::Lexer;
 use codecrafters_interpreter::vm::ExecutionEnv;
 use codecrafters_interpreter::vm::Vm;
@@ -78,12 +79,17 @@ fn main() -> ResultCode {
             });
 
             let mut errors = Vec::new();
-            let program = ast::parse(Lexer::new(&file_contents), &mut errors);
+            let program = ast::parse_expression(Lexer::new(&file_contents), &mut errors);
             for error in &errors {
                 eprintln!("{error}");
             }
             for expr in program.exprs {
-                expr.value().diag_print(&mut std::io::stdout()).unwrap();
+                match expr.value() {
+                    Statement::Print(expr) => {
+                        expr.value().diag_print(&mut std::io::stdout()).unwrap()
+                    }
+                    _ => unreachable!("Expressions are always turned into print statements"),
+                }
                 println!();
             }
 
@@ -94,6 +100,40 @@ fn main() -> ResultCode {
             }
         }
         "evaluate" => {
+            let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
+                writeln!(io::stderr(), "Failed to read file {}", filename).unwrap();
+                String::new()
+            });
+
+            let mut errors = Vec::new();
+            let program = ast::parse_expression(Lexer::new(&file_contents), &mut errors);
+            for error in &errors {
+                eprintln!("{error}");
+            }
+
+            if errors.is_empty() {
+                let program = program.compile();
+                struct DummyEnv;
+                impl ExecutionEnv for DummyEnv {
+                    fn print(&mut self, value: &str) {
+                        println!("{value}");
+                    }
+                }
+                let mut env = DummyEnv;
+                let mut vm = Vm::new(&mut env, program);
+                if let Err(e) = vm.run() {
+                    eprintln!("{e}");
+                    return ResultCode::ExecutionError;
+                }
+            }
+
+            if errors.is_empty() {
+                ResultCode::Ok
+            } else {
+                ResultCode::HasLexingErrors
+            }
+        }
+        "run" => {
             let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
                 writeln!(io::stderr(), "Failed to read file {}", filename).unwrap();
                 String::new()

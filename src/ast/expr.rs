@@ -1,8 +1,5 @@
 use crate::{
-    ast::{
-        parser::{ExpectedToken, ParseError},
-        Parser, Spanned,
-    },
+    ast::{parser::ParseError, Parser, Spanned},
     lexer::{Span, TokenKind, TokenValue},
     vm,
 };
@@ -26,6 +23,7 @@ pub(super) fn parse(
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum UnaryOp {
     Negate,
     LogicalNot,
@@ -39,6 +37,7 @@ impl UnaryOp {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum BinaryOp {
     Mul,
     Div,
@@ -68,6 +67,7 @@ impl BinaryOp {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     LiteralString(String),
     LiteralNumber(f64),
@@ -163,7 +163,7 @@ impl Expression {
         }
     }
 
-    fn parse(parser: &mut impl Parser) -> Result<Expression, ParseError> {
+    pub(super) fn parse(parser: &mut impl Parser) -> Result<Expression, ParseError> {
         Self::parse_equality(parser)
     }
 

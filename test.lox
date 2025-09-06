@@ -1,0 +1,21 @@
+print true;
+print false;
+print nil;
+print 1;
+print 2;
+print "abc";
+print !true;
+print (-9.0);
+print (false);
+print 1 - 2;
+print 1 + 2;
+print 1 / 2;
+print  1 * 2;
+print  1 < 2 ;
+print  1 > 2 ;
+print  1 <= 2 ;
+print  1 >= 2 ;
+print  1 == 2 ;
+print  1 != 2 ;
+
+print "a" + "b";
