@@ -261,7 +261,7 @@ impl Statement {
             Some(Spanned::new(span, condition))
         };
 
-        let increment = if parser.peek().value() != TokenKind::RParen {
+        let increment = if parser.current().value() != &TokenValue::RParen {
             let span = parser.begin_span();
             let increment = Expression::parse(parser)?;
             let span = parser.end_span(span);
