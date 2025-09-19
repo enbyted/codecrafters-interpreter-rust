@@ -53,6 +53,8 @@ pub enum BinaryOp {
     Gte,
     Eq,
     Neq,
+    Or,
+    And,
 }
 impl BinaryOp {
     fn diag_symbol(&self) -> &'static str {
@@ -67,6 +69,8 @@ impl BinaryOp {
             BinaryOp::Gte => ">=",
             BinaryOp::Eq => "==",
             BinaryOp::Neq => "!=",
+            BinaryOp::Or => "or",
+            BinaryOp::And => "and",
         }
     }
 }
@@ -137,6 +141,20 @@ impl Expression {
                     UnaryOp::LogicalNot => compiler.push(span, vm::Instruction::LogicalNot),
                 }
             }
+            Expression::Binary(left, BinaryOp::Or, right) => {
+                left.value.compile(left.span.clone(), compiler);
+                let left_patch = compiler.jump(left.span.clone(), vm::JumpCondition::Truthy);
+                compiler.push(left.span, vm::Instruction::Pop);
+                right.value.compile(right.span, compiler);
+                compiler.patch_jump(left_patch, compiler.ip());
+            }
+            Expression::Binary(left, BinaryOp::And, right) => {
+                left.value.compile(left.span.clone(), compiler);
+                let left_patch = compiler.jump(left.span.clone(), vm::JumpCondition::Falsy);
+                compiler.push(left.span, vm::Instruction::Pop);
+                right.value.compile(right.span, compiler);
+                compiler.patch_jump(left_patch, compiler.ip());
+            }
             Expression::Binary(left, op, right) => {
                 left.value.compile(left.span, compiler);
                 right.value.compile(right.span, compiler);
@@ -162,6 +180,9 @@ impl Expression {
                         compiler.push(span.clone(), vm::Instruction::Equal);
                         compiler.push(span, vm::Instruction::LogicalNot);
                     }
+                    BinaryOp::Or | BinaryOp::And => {
+                        unreachable!("Conditional OR or AND are handled separately")
+                    }
                 }
             }
             Expression::Variable(name) => {
@@ -180,7 +201,7 @@ impl Expression {
 
     fn parse_assignment(parser: &mut impl Parser) -> Result<Expression, ParseError> {
         let left_span = parser.begin_span();
-        let left = Self::parse_equality(parser)?;
+        let left = Self::parse_or(parser)?;
         let left_span = parser.end_span(left_span);
 
         let invalid_target_error = parser.error_here(InvalidAssignmentTarget);
@@ -201,6 +222,20 @@ impl Expression {
         }
 
         Ok(left)
+    }
+
+    fn parse_or(parser: &mut impl Parser) -> Result<Expression, ParseError> {
+        Self::parse_binary(parser, Self::parse_and, |v| match v {
+            TokenValue::KwOr => Some(BinaryOp::Or),
+            _ => None,
+        })
+    }
+
+    fn parse_and(parser: &mut impl Parser) -> Result<Expression, ParseError> {
+        Self::parse_binary(parser, Self::parse_equality, |v| match v {
+            TokenValue::KwAnd => Some(BinaryOp::And),
+            _ => None,
+        })
     }
 
     fn parse_equality(parser: &mut impl Parser) -> Result<Expression, ParseError> {
