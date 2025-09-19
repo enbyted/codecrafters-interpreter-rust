@@ -14,6 +14,8 @@ pub(crate) enum JumpCondition {
 #[derive(Debug)]
 pub(crate) enum Instruction {
     // +1
+    Dup,
+    // +1
     PushNil,
     // +1
     PushBool(bool),
@@ -136,6 +138,10 @@ impl<'env> Vm<'env> {
             //     self.peek_value(instruction.span())
             // );
             match instruction.value() {
+                Instruction::Dup => {
+                    let value = self.peek_value(instruction.span())?;
+                    self.stack.push(value.clone());
+                }
                 Instruction::PushNil => {
                     self.stack.push(Value::Nil);
                 }

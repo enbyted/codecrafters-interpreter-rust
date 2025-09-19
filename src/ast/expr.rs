@@ -143,6 +143,7 @@ impl Expression {
             }
             Expression::Binary(left, BinaryOp::Or, right) => {
                 left.value.compile(left.span.clone(), compiler);
+                compiler.push(left.span.clone(), vm::Instruction::Dup);
                 let left_patch = compiler.jump(left.span.clone(), vm::JumpCondition::Truthy);
                 compiler.push(left.span, vm::Instruction::Pop);
                 right.value.compile(right.span, compiler);
@@ -150,6 +151,7 @@ impl Expression {
             }
             Expression::Binary(left, BinaryOp::And, right) => {
                 left.value.compile(left.span.clone(), compiler);
+                compiler.push(left.span.clone(), vm::Instruction::Dup);
                 let left_patch = compiler.jump(left.span.clone(), vm::JumpCondition::Falsy);
                 compiler.push(left.span, vm::Instruction::Pop);
                 right.value.compile(right.span, compiler);
