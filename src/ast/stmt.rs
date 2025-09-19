@@ -36,6 +36,11 @@ pub enum Statement {
         value: Option<Spanned<Expression>>,
     },
     Block(Vec<Spanned<Statement>>),
+    If {
+        condition: Spanned<Expression>,
+        then_branch: Spanned<Box<Statement>>,
+        else_branch: Option<Spanned<Box<Statement>>>,
+    },
 }
 impl Statement {
     pub(super) fn compile(self, span: Span, compiler: &mut Compiler) {
@@ -66,6 +71,24 @@ impl Statement {
                     statement.value.compile(statement.span, compiler);
                 }
                 compiler.exit_scope();
+            }
+            Statement::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                condition.value.compile(condition.span.clone(), compiler);
+                let then_patch = compiler.jump(condition.span.clone(), vm::JumpCondition::Falsy);
+                then_branch.value.compile(then_branch.span, compiler);
+                if let Some(else_branch) = else_branch {
+                    let else_patch = compiler.jump(condition.span, vm::JumpCondition::Always);
+                    compiler.patch_jump(then_patch, compiler.ip());
+                    else_branch.value.compile(else_branch.span, compiler);
+                    compiler.patch_jump(else_patch, compiler.ip());
+                } else {
+                    compiler.patch_jump(then_patch, compiler.ip());
+                }
+                compiler.push(span, vm::Instruction::Pop);
             }
         }
     }
@@ -116,9 +139,36 @@ impl Statement {
             Self::parse_print(parser)
         } else if parser.take(TokenKind::LBrace).is_some() {
             Self::parse_block(parser)
+        } else if parser.take(TokenKind::KwIf).is_some() {
+            Self::parse_if(parser)
         } else {
             Self::parse_expr(parser)
         }
+    }
+
+    fn parse_if(parser: &mut impl Parser) -> Result<Statement, ParseError> {
+        parser.consume(TokenKind::LParen, "Expect '(' after 'if'.")?;
+        let condition_span = parser.begin_span();
+        let condition = Expression::parse(parser)?;
+        let condition_span = parser.end_span(condition_span);
+        parser.consume(TokenKind::RParen, "Expect ')' after condition.")?;
+        let then_branch_span = parser.begin_span();
+        let then_branch = Self::parse_statement(parser)?;
+        let then_branch_span = parser.end_span(then_branch_span);
+        let else_branch = if parser.take(TokenKind::KwElse).is_some() {
+            let else_branch_span = parser.begin_span();
+            let else_branch = Self::parse_statement(parser)?;
+            let else_branch_span = parser.end_span(else_branch_span);
+            Some(Spanned::new(else_branch_span, Box::new(else_branch)))
+        } else {
+            None
+        };
+
+        Ok(Statement::If {
+            condition: Spanned::new(condition_span, condition),
+            then_branch: Spanned::new(then_branch_span, Box::new(then_branch)),
+            else_branch,
+        })
     }
 
     fn parse_block(parser: &mut impl Parser) -> Result<Statement, ParseError> {

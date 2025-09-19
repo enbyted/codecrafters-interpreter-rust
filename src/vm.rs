@@ -4,6 +4,13 @@ use thiserror::Error;
 
 use crate::{ast::Spanned, lexer::Span};
 
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub(crate) enum JumpCondition {
+    Always,
+    Truthy,
+    Falsy,
+}
+
 #[derive(Debug)]
 pub(crate) enum Instruction {
     // +1
@@ -44,6 +51,11 @@ pub(crate) enum Instruction {
     ReadStackAbsolute(usize),
     // 0
     WriteStackAbsolute(usize),
+    // 0
+    Jump {
+        condition: JumpCondition,
+        target: usize,
+    },
 }
 
 pub struct Program {
@@ -56,6 +68,15 @@ enum Value {
     Bool(bool),
     String(String),
     Number(f64),
+}
+impl Value {
+    fn truthy(&self) -> bool {
+        match self {
+            Value::Nil => false,
+            Value::Bool(value) => *value,
+            Value::String(_) | Value::Number(_) => true,
+        }
+    }
 }
 
 pub trait ExecutionEnv {
@@ -108,6 +129,12 @@ impl<'env> Vm<'env> {
 
     pub fn run(&mut self) -> Result<(), RuntimeError> {
         while let Some(instruction) = self.program.get(self.pc) {
+            // eprintln!(
+            //     "PC = {}, Instruction = {:?}, TOS = {:?}",
+            //     self.pc,
+            //     instruction.value(),
+            //     self.peek_value(instruction.span())
+            // );
             match instruction.value() {
                 Instruction::PushNil => {
                     self.stack.push(Value::Nil);
@@ -241,6 +268,18 @@ impl<'env> Vm<'env> {
                     self.stack[index] = value.clone();
                     self.stack.push(value);
                 }
+                Instruction::Jump { condition, target } => {
+                    let value = self.peek_value(instruction.span())?.truthy();
+                    let should_jump = match condition {
+                        JumpCondition::Always => true,
+                        JumpCondition::Truthy => value,
+                        JumpCondition::Falsy => !value,
+                    };
+                    if should_jump {
+                        self.pc = *target;
+                        continue;
+                    }
+                }
             }
             self.pc += 1;
         }
@@ -272,11 +311,7 @@ impl<'env> Vm<'env> {
 
     fn pop_boolean(&mut self, span: Span) -> Result<bool, RuntimeError> {
         let value = self.pop_value(span.clone())?;
-        Ok(match value {
-            Value::Nil => false,
-            Value::Bool(value) => value,
-            Value::String(_) | Value::Number(_) => true,
-        })
+        Ok(value.truthy())
     }
 
     fn pop_value(&mut self, span: Span) -> Result<Value, RuntimeError> {
@@ -285,5 +320,11 @@ impl<'env> Vm<'env> {
             .pop()
             .ok_or_else(|| RuntimeError::new(span, format!("Expected a value on the stack.")))?;
         Ok(value)
+    }
+
+    fn peek_value(&self, span: Span) -> Result<&Value, RuntimeError> {
+        self.stack
+            .last()
+            .ok_or_else(|| RuntimeError::new(span, format!("Expected a value on the stack.")))
     }
 }

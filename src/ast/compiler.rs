@@ -48,6 +48,15 @@ impl Scope {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct IP(usize);
+
+#[derive(Debug)]
+pub(super) struct JumpPatch {
+    instruction_index: usize,
+    scope_sof: usize,
+}
+
 pub(super) struct Compiler {
     instructions: Vec<Spanned<vm::Instruction>>,
     scope: Vec<Scope>,
@@ -80,6 +89,43 @@ impl Compiler {
                     vm::Instruction::Pop,
                 ));
             }
+        }
+    }
+
+    pub(super) fn ip(&self) -> IP {
+        IP(self.instructions.len())
+    }
+
+    pub(super) fn jump(&mut self, span: Span, condition: vm::JumpCondition) -> JumpPatch {
+        let instruction_index = self.instructions.len();
+        self.instructions.push(Spanned::new(
+            span,
+            vm::Instruction::Jump {
+                condition,
+                target: 0,
+            },
+        ));
+        JumpPatch {
+            instruction_index,
+            scope_sof: self
+                .scope
+                .last()
+                .map(|scope| scope.start_of_frame)
+                .unwrap_or(0),
+        }
+    }
+
+    pub(super) fn patch_jump(&mut self, patch: JumpPatch, new_target: IP) {
+        assert_eq!(
+            self.scope
+                .last()
+                .map(|scope| scope.start_of_frame)
+                .unwrap_or(0),
+            patch.scope_sof
+        );
+        match &mut self.instructions[patch.instruction_index].value {
+            vm::Instruction::Jump { target, .. } => *target = new_target.0,
+            _ => panic!("Expected a jump instruction"),
         }
     }
 
