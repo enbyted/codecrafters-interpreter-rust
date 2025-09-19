@@ -51,7 +51,7 @@ pub(crate) enum Instruction {
     ReadStackAbsolute(usize),
     // 0
     WriteStackAbsolute(usize),
-    // 0
+    // -1 (if condition is not Always)
     Jump {
         condition: JumpCondition,
         target: usize,
@@ -269,14 +269,14 @@ impl<'env> Vm<'env> {
                     self.stack.push(value);
                 }
                 Instruction::Jump { condition, target } => {
-                    let value = self.peek_value(instruction.span())?.truthy();
+                    let target = *target;
                     let should_jump = match condition {
                         JumpCondition::Always => true,
-                        JumpCondition::Truthy => value,
-                        JumpCondition::Falsy => !value,
+                        JumpCondition::Truthy => self.pop_boolean(instruction.span())?,
+                        JumpCondition::Falsy => !self.pop_boolean(instruction.span())?,
                     };
                     if should_jump {
-                        self.pc = *target;
+                        self.pc = target;
                         continue;
                     }
                 }

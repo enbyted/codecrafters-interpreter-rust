@@ -1,4 +1,7 @@
 var hello = "global";
+var cnt = "global";
+for(var cnt = 0; cnt < 3; cnt = cnt + 1) print cnt;
+print cnt;
 {
 var hello;
 print hello;

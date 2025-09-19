@@ -4,6 +4,7 @@ use crate::{ast::Spanned, lexer::Span, vm};
 
 pub(super) enum ScopeType {
     Block,
+    ForLoop,
 }
 
 struct Scope {
