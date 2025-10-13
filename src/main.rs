@@ -155,6 +155,7 @@ fn main() -> ResultCode {
                 }
                 let mut env = DummyEnv;
                 let mut vm = Vm::new(&mut env, program);
+                vm.reset();
                 if let Err(e) = vm.run() {
                     eprintln!("{e}");
                     return ResultCode::ExecutionError;

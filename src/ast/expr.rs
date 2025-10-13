@@ -86,6 +86,7 @@ pub enum Expression {
     Binary(Box<Spanned<Expression>>, BinaryOp, Box<Spanned<Expression>>),
     Variable(String),
     Assignement(Spanned<String>, Box<Spanned<Expression>>),
+    Call(Box<Spanned<Expression>>, Vec<Spanned<Expression>>),
 }
 impl Expression {
     pub fn diag_print(&self, out: &mut impl std::io::Write) -> std::io::Result<()> {
@@ -119,6 +120,16 @@ impl Expression {
                 write!(out, "{} = ", name.value())?;
                 value.value().diag_print(out)?;
                 write!(out, ")")
+            }
+            Expression::Call(callee, args) => {
+                write!(out, "(")?;
+                callee.value().diag_print(out)?;
+                write!(out, "(")?;
+                for arg in args {
+                    write!(out, ", ")?;
+                    arg.value().diag_print(out)?;
+                }
+                write!(out, "))")
             }
         }
     }
@@ -193,6 +204,14 @@ impl Expression {
             Expression::Assignement(name, value) => {
                 value.value.compile(value.span, compiler);
                 compiler.write_variable(Spanned::new(name.span(), name.value()));
+            }
+            Expression::Call(callee, args) => {
+                callee.value.compile(callee.span, compiler);
+                let arity = args.len();
+                for arg in args {
+                    arg.value.compile(arg.span, compiler);
+                }
+                compiler.push(span, vm::Instruction::Call { arity });
             }
         }
     }
@@ -310,8 +329,47 @@ impl Expression {
             let span = parser.end_span(span);
             Ok(Expression::Unary(op, Spanned::boxed(span, expr)))
         } else {
-            Self::parse_primary(parser)
+            Self::parse_call(parser)
         }
+    }
+
+    fn parse_call(parser: &mut impl Parser) -> Result<Expression, ParseError> {
+        let span = parser.begin_span();
+        let mut expr = Self::parse_primary(parser)?;
+        let mut expr_span = parser.end_span(span);
+        loop {
+            if parser.take(TokenKind::LParen).is_some() {
+                let span = parser.begin_span();
+                expr = Self::finish_call(parser, Spanned::new(expr_span, expr))?;
+                expr_span = parser.end_span(span);
+            } else {
+                break;
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn finish_call(
+        parser: &mut impl Parser,
+        callee: Spanned<Expression>,
+    ) -> Result<Expression, ParseError> {
+        let mut args = Vec::new();
+        if !parser.take(TokenKind::RParen).is_some() {
+            loop {
+                let arg_span = parser.begin_span();
+                let arg = Self::parse(parser)?;
+                let arg_span = parser.end_span(arg_span);
+                args.push(Spanned::new(arg_span, arg));
+
+                if parser.take(TokenKind::Comma).is_none() {
+                    break;
+                }
+            }
+            parser.consume(TokenKind::RParen, "after arguments")?;
+        }
+
+        Ok(Expression::Call(Box::new(callee), args))
     }
 
     fn parse_primary(parser: &mut impl Parser) -> Result<Expression, ParseError> {

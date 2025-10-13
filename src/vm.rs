@@ -58,6 +58,10 @@ pub(crate) enum Instruction {
         condition: JumpCondition,
         target: usize,
     },
+    // -(arity+1), +1
+    Call {
+        arity: usize,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -65,6 +69,7 @@ pub struct Chunk {
     pub(crate) instructions: Vec<Spanned<Instruction>>,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Program {
     main_chunk: Arc<Chunk>,
     chunks: Vec<Arc<Chunk>>,
@@ -83,6 +88,19 @@ impl Program {
     }
 }
 
+#[derive(Clone)]
+struct NativeFn(Arc<dyn Fn(&[Value]) -> Result<Value, RuntimeError>>);
+impl std::fmt::Debug for NativeFn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<native fn>")
+    }
+}
+impl PartialEq for NativeFn {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 enum Value {
     Nil,
@@ -94,6 +112,10 @@ enum Value {
         arity: usize,
         name: String,
     },
+    NativeFunction {
+        arity: usize,
+        function: NativeFn,
+    },
 }
 impl Value {
     fn truthy(&self) -> bool {
@@ -102,6 +124,7 @@ impl Value {
             Value::Bool(value) => *value,
             Value::String(_) | Value::Number(_) => true,
             Value::Function { .. } => true,
+            Value::NativeFunction { .. } => true,
         }
     }
 }
@@ -159,11 +182,13 @@ pub struct Vm<'env> {
     env: &'env mut dyn ExecutionEnv,
     frames: Vec<Frame>,
     globals: HashMap<String, Value>,
+    main_chunk: Arc<Chunk>,
 }
 impl<'env> Vm<'env> {
     pub fn new(env: &'env mut dyn ExecutionEnv, program: Program) -> Self {
         Self {
             env,
+            main_chunk: program.main_chunk.clone(),
             frames: vec![Frame::new(program.main_chunk)],
             globals: HashMap::new(),
         }
@@ -172,6 +197,23 @@ impl<'env> Vm<'env> {
     pub fn reset(&mut self) {
         self.frames.clear();
         self.globals.clear();
+
+        self.frames.push(Frame::new(self.main_chunk.clone()));
+
+        self.globals.insert(
+            "clock".into(),
+            Value::NativeFunction {
+                arity: 0,
+                function: (NativeFn(Arc::new(|_| {
+                    Ok(Value::Number(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs_f64(),
+                    ))
+                }))),
+            },
+        );
     }
 
     fn push_value(&mut self, value: Value) {
@@ -184,12 +226,15 @@ impl<'env> Vm<'env> {
 
     pub fn run(&mut self) -> Result<(), RuntimeError> {
         while let Some(instruction) = self.frames.last().and_then(Frame::current_instruction) {
-            // eprintln!(
-            //     "PC = {}, Instruction = {:?}, TOS = {:?}",
-            //     self.pc,
-            //     instruction.value(),
-            //     self.peek_value(instruction.span())
-            // );
+            //eprintln!(
+            //    "PC = {}, Instruction = {:?}, TOS = {:?}",
+            //    self.frames
+            //        .last()
+            //        .expect("At least one frame must be present")
+            //        .pc,
+            //    instruction.value(),
+            //    self.peek_value(instruction.span())
+            //);
             match instruction.value() {
                 Instruction::Dup => {
                     let value = self.peek_value(instruction.span())?;
@@ -214,6 +259,7 @@ impl<'env> Vm<'env> {
                     Value::Bool(true) => self.env.print("true"),
                     Value::Bool(false) => self.env.print("false"),
                     Value::Function { name, .. } => self.env.print(&format!("<fn {name}>")),
+                    Value::NativeFunction { .. } => self.env.print("<native fn>"),
                 },
                 Instruction::Pop => {
                     self.pop_value(instruction.span())?;
@@ -351,6 +397,39 @@ impl<'env> Vm<'env> {
                         continue;
                     }
                 }
+                Instruction::Call { arity } => {
+                    let fun = self.peek_downward(*arity, instruction.span())?;
+                    match fun {
+                        Value::Function { chunk, arity, name } => {
+                            todo!("Support functions");
+                        }
+                        Value::NativeFunction {
+                            arity: fun_arity,
+                            function,
+                        } => {
+                            let arity = *arity;
+                            if *fun_arity != arity {
+                                Err(RuntimeError::new(
+                                    instruction.span(),
+                                    "Expected a function with the given arity.",
+                                ))?;
+                            }
+                            let function = function.clone();
+                            let last_frame = &mut self
+                                .frames
+                                .last_mut()
+                                .expect("Just taken a value from last frame")
+                                .stack;
+                            let result = function.0(&last_frame[last_frame.len() - arity..])?;
+                            last_frame.truncate(last_frame.len() - arity - 1);
+                            self.push_value(result);
+                        }
+                        _ => Err(RuntimeError::new(
+                            instruction.span(),
+                            "Expected a function on the stack.",
+                        ))?,
+                    }
+                }
             }
             self.frames
                 .last_mut()
@@ -405,6 +484,18 @@ impl<'env> Vm<'env> {
             .expect("At least one frame must be present")
             .stack
             .last()
+            .ok_or_else(|| RuntimeError::new(span, format!("Expected a value on the stack.")))
+    }
+
+    fn peek_downward(&self, offset: usize, span: Span) -> Result<&Value, RuntimeError> {
+        let stack = &self
+            .frames
+            .last()
+            .expect("At least one frame must be present")
+            .stack;
+
+        stack
+            .get(stack.len() - offset - 1)
             .ok_or_else(|| RuntimeError::new(span, format!("Expected a value on the stack.")))
     }
 }
