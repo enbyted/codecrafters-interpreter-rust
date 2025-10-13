@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use crate::{ast::Spanned, lexer::Span, vm};
+use crate::{
+    ast::Spanned,
+    lexer::Span,
+    vm::{self, Chunk},
+};
 
 pub(super) enum ScopeType {
     Block,
@@ -131,9 +135,9 @@ impl Compiler {
     }
 
     pub(super) fn finalize(self) -> vm::Program {
-        vm::Program {
+        vm::Program::new(Chunk {
             instructions: self.instructions,
-        }
+        })
     }
 
     pub(super) fn push(&mut self, span: Span, instruction: vm::Instruction) {

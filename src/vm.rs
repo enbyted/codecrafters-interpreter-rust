@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use thiserror::Error;
 
@@ -11,7 +11,7 @@ pub(crate) enum JumpCondition {
     Falsy,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum Instruction {
     // +1
     Dup,
@@ -60,8 +60,27 @@ pub(crate) enum Instruction {
     },
 }
 
-pub struct Program {
+#[derive(Debug, PartialEq)]
+pub struct Chunk {
     pub(crate) instructions: Vec<Spanned<Instruction>>,
+}
+
+pub struct Program {
+    main_chunk: Arc<Chunk>,
+    chunks: Vec<Arc<Chunk>>,
+}
+impl Program {
+    pub fn new(main_chunk: Chunk) -> Self {
+        Self {
+            main_chunk: Arc::new(main_chunk),
+            chunks: Vec::new(),
+        }
+    }
+
+    pub fn add_chunk(&mut self, chunk: Chunk) -> usize {
+        self.chunks.push(Arc::new(chunk));
+        self.chunks.len() - 1
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -70,6 +89,11 @@ enum Value {
     Bool(bool),
     String(String),
     Number(f64),
+    Function {
+        chunk: Arc<Chunk>,
+        arity: usize,
+        name: String,
+    },
 }
 impl Value {
     fn truthy(&self) -> bool {
@@ -77,6 +101,7 @@ impl Value {
             Value::Nil => false,
             Value::Bool(value) => *value,
             Value::String(_) | Value::Number(_) => true,
+            Value::Function { .. } => true,
         }
     }
 }
@@ -111,26 +136,54 @@ impl<T> RuntimeErrorExt<T> for Result<T, RuntimeError> {
     }
 }
 
+struct Frame {
+    chunk: Arc<Chunk>,
+    pc: usize,
+    stack: Vec<Value>,
+}
+impl Frame {
+    fn new(chunk: Arc<Chunk>) -> Self {
+        Self {
+            chunk,
+            pc: 0,
+            stack: Vec::new(),
+        }
+    }
+
+    fn current_instruction(&self) -> Option<&Spanned<Instruction>> {
+        self.chunk.instructions.get(self.pc)
+    }
+}
+
 pub struct Vm<'env> {
     env: &'env mut dyn ExecutionEnv,
-    stack: Vec<Value>,
-    program: Vec<Spanned<Instruction>>,
-    pc: usize,
+    frames: Vec<Frame>,
     globals: HashMap<String, Value>,
 }
 impl<'env> Vm<'env> {
     pub fn new(env: &'env mut dyn ExecutionEnv, program: Program) -> Self {
         Self {
             env,
-            stack: Vec::new(),
-            program: program.instructions,
-            pc: 0,
+            frames: vec![Frame::new(program.main_chunk)],
             globals: HashMap::new(),
         }
     }
 
+    pub fn reset(&mut self) {
+        self.frames.clear();
+        self.globals.clear();
+    }
+
+    fn push_value(&mut self, value: Value) {
+        self.frames
+            .last_mut()
+            .expect("At least one frame must be present")
+            .stack
+            .push(value);
+    }
+
     pub fn run(&mut self) -> Result<(), RuntimeError> {
-        while let Some(instruction) = self.program.get(self.pc) {
+        while let Some(instruction) = self.frames.last().and_then(Frame::current_instruction) {
             // eprintln!(
             //     "PC = {}, Instruction = {:?}, TOS = {:?}",
             //     self.pc,
@@ -140,40 +193,40 @@ impl<'env> Vm<'env> {
             match instruction.value() {
                 Instruction::Dup => {
                     let value = self.peek_value(instruction.span())?;
-                    self.stack.push(value.clone());
+                    self.push_value(value.clone());
                 }
                 Instruction::PushNil => {
-                    self.stack.push(Value::Nil);
+                    self.push_value(Value::Nil);
                 }
                 Instruction::PushBool(value) => {
-                    self.stack.push(Value::Bool(*value));
+                    self.push_value(Value::Bool(*value));
                 }
                 Instruction::PushString(value) => {
-                    self.stack.push(Value::String(value.clone()));
+                    self.push_value(Value::String(value.clone()));
                 }
                 Instruction::PushNumber(value) => {
-                    self.stack.push(Value::Number(*value));
+                    self.push_value(Value::Number(*value));
                 }
-                Instruction::Print => match self.stack.last() {
-                    Some(Value::String(value)) => self.env.print(value),
-                    Some(Value::Number(value)) => self.env.print(&format!("{value}")),
-                    Some(Value::Nil) => self.env.print("nil"),
-                    Some(Value::Bool(true)) => self.env.print("true"),
-                    Some(Value::Bool(false)) => self.env.print("false"),
-                    None => todo!("Handle runtime errors"),
+                Instruction::Print => match self.peek_value(instruction.span())? {
+                    Value::String(value) => self.env.print(&value.clone()),
+                    Value::Number(value) => self.env.print(&format!("{value}")),
+                    Value::Nil => self.env.print("nil"),
+                    Value::Bool(true) => self.env.print("true"),
+                    Value::Bool(false) => self.env.print("false"),
+                    Value::Function { name, .. } => self.env.print(&format!("<fn {name}>")),
                 },
                 Instruction::Pop => {
-                    self.stack.pop();
+                    self.pop_value(instruction.span())?;
                 }
                 Instruction::Negate => {
                     let value = self
                         .pop_number(instruction.span())
                         .with_message("Operand must be a number.")?;
-                    self.stack.push(Value::Number(-value));
+                    self.push_value(Value::Number(-value));
                 }
                 Instruction::LogicalNot => {
                     let value = self.pop_boolean(instruction.span())?;
-                    self.stack.push(Value::Bool(!value));
+                    self.push_value(Value::Bool(!value));
                 }
                 Instruction::Add => {
                     let span = instruction.span();
@@ -181,11 +234,11 @@ impl<'env> Vm<'env> {
                     let left = self.pop_value(span.clone())?;
                     match (left, right) {
                         (Value::Number(left), Value::Number(right)) => {
-                            self.stack.push(Value::Number(left + right));
+                            self.push_value(Value::Number(left + right));
                         }
                         (Value::String(mut left), Value::String(right)) => {
                             left.extend(right.chars());
-                            self.stack.push(Value::String(left));
+                            self.push_value(Value::String(left));
                         }
                         _ => Err(RuntimeError::new(
                             span,
@@ -201,7 +254,7 @@ impl<'env> Vm<'env> {
                     let left = self
                         .pop_number(span)
                         .with_message("Operands must be numbers.")?;
-                    self.stack.push(Value::Number(left - right));
+                    self.push_value(Value::Number(left - right));
                 }
                 Instruction::Mul => {
                     let span = instruction.span();
@@ -211,7 +264,7 @@ impl<'env> Vm<'env> {
                     let left = self
                         .pop_number(span)
                         .with_message("Operands must be numbers.")?;
-                    self.stack.push(Value::Number(left * right));
+                    self.push_value(Value::Number(left * right));
                 }
                 Instruction::Div => {
                     let span = instruction.span();
@@ -221,7 +274,7 @@ impl<'env> Vm<'env> {
                     let left = self
                         .pop_number(span)
                         .with_message("Operands must be numbers.")?;
-                    self.stack.push(Value::Number(left / right));
+                    self.push_value(Value::Number(left / right));
                 }
                 Instruction::Less => {
                     let span = instruction.span();
@@ -231,7 +284,7 @@ impl<'env> Vm<'env> {
                     let left = self
                         .pop_number(span)
                         .with_message("Operands must be numbers.")?;
-                    self.stack.push(Value::Bool(left < right));
+                    self.push_value(Value::Bool(left < right));
                 }
                 Instruction::LessOrEqual => {
                     let span = instruction.span();
@@ -241,17 +294,17 @@ impl<'env> Vm<'env> {
                     let left = self
                         .pop_number(span)
                         .with_message("Operands must be numbers.")?;
-                    self.stack.push(Value::Bool(left <= right));
+                    self.push_value(Value::Bool(left <= right));
                 }
                 Instruction::Equal => {
                     let span = instruction.span();
                     let right = self.pop_value(span.clone())?;
                     let left = self.pop_value(span)?;
-                    self.stack.push(Value::Bool(left == right));
+                    self.push_value(Value::Bool(left == right));
                 }
                 Instruction::ReadGlobal(name) => {
                     if let Some(value) = self.globals.get(name).clone() {
-                        self.stack.push(value.clone());
+                        self.push_value(value.clone());
                     } else {
                         Err(RuntimeError::new(
                             instruction.span(),
@@ -263,16 +316,25 @@ impl<'env> Vm<'env> {
                     let name = name.clone();
                     let value = self.pop_value(instruction.span())?;
                     self.globals.insert(name, value.clone());
-                    self.stack.push(value);
+                    self.push_value(value);
                 }
                 Instruction::ReadStackAbsolute(index) => {
-                    self.stack.push(self.stack[*index].clone());
+                    self.push_value(
+                        self.frames
+                            .last()
+                            .expect("At least one frame must be present")
+                            .stack[*index]
+                            .clone(),
+                    );
                 }
                 Instruction::WriteStackAbsolute(index) => {
                     let index = *index;
                     let value = self.pop_value(instruction.span())?;
-                    self.stack[index] = value.clone();
-                    self.stack.push(value);
+                    self.frames
+                        .last_mut()
+                        .expect("At least one frame must be present")
+                        .stack[index] = value.clone();
+                    self.push_value(value);
                 }
                 Instruction::Jump { condition, target } => {
                     let target = *target;
@@ -282,12 +344,18 @@ impl<'env> Vm<'env> {
                         JumpCondition::Falsy => !self.pop_boolean(instruction.span())?,
                     };
                     if should_jump {
-                        self.pc = target;
+                        self.frames
+                            .last_mut()
+                            .expect("At least one frame must be present")
+                            .pc = target;
                         continue;
                     }
                 }
             }
-            self.pc += 1;
+            self.frames
+                .last_mut()
+                .expect("At least one frame must be present")
+                .pc += 1;
         }
 
         Ok(())
@@ -322,6 +390,9 @@ impl<'env> Vm<'env> {
 
     fn pop_value(&mut self, span: Span) -> Result<Value, RuntimeError> {
         let value = self
+            .frames
+            .last_mut()
+            .expect("At least one frame must be present")
             .stack
             .pop()
             .ok_or_else(|| RuntimeError::new(span, format!("Expected a value on the stack.")))?;
@@ -329,7 +400,10 @@ impl<'env> Vm<'env> {
     }
 
     fn peek_value(&self, span: Span) -> Result<&Value, RuntimeError> {
-        self.stack
+        self.frames
+            .last()
+            .expect("At least one frame must be present")
+            .stack
             .last()
             .ok_or_else(|| RuntimeError::new(span, format!("Expected a value on the stack.")))
     }
