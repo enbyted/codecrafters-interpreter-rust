@@ -9,6 +9,7 @@ use crate::{
 pub(super) enum ScopeType {
     Block,
     ForLoop,
+    Function,
 }
 
 struct Scope {
@@ -131,6 +132,12 @@ impl Compiler {
         match &mut self.instructions[patch.instruction_index].value {
             vm::Instruction::Jump { target, .. } => *target = new_target.0,
             _ => panic!("Expected a jump instruction"),
+        }
+    }
+
+    pub(super) fn into_chunk(self) -> Chunk {
+        Chunk {
+            instructions: self.instructions,
         }
     }
 

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     ast::{
         compiler::{Compiler, ScopeType},
@@ -34,6 +36,11 @@ pub enum Statement {
     VarDeclaration {
         name: Spanned<String>,
         value: Option<Spanned<Expression>>,
+    },
+    FunDeclaration {
+        name: Spanned<String>,
+        args: Vec<Spanned<String>>,
+        body: Spanned<Box<Statement>>,
     },
     Block(Vec<Spanned<Statement>>),
     If {
@@ -73,6 +80,28 @@ impl Statement {
                 } else {
                     compiler.push(span, vm::Instruction::PushNil);
                 }
+                compiler.write_variable(Spanned::new(name.span(), &name.value));
+            }
+            Statement::FunDeclaration { name, args, body } => {
+                compiler.declare_variable(Spanned::new(name.span(), &name.value));
+                let mut inner = Compiler::new();
+                inner.enter_scope(ScopeType::Function);
+                let arity = args.len();
+                for arg in args {
+                    inner.declare_variable(Spanned::new(arg.span(), &arg.value));
+                }
+                body.value.compile(body.span.clone(), &mut inner);
+                inner.push(body.span, vm::Instruction::Return);
+                inner.exit_scope();
+                let chunk = inner.into_chunk();
+                compiler.push(
+                    name.span(),
+                    vm::Instruction::PushFunction {
+                        chunk: Arc::new(chunk),
+                        arity,
+                        name: name.value.clone(),
+                    },
+                );
                 compiler.write_variable(Spanned::new(name.span(), &name.value));
             }
             Statement::Block(statements) => {
@@ -142,11 +171,68 @@ impl Statement {
     }
 
     fn parse_declarion(parser: &mut impl Parser) -> Result<Statement, ParseError> {
-        if parser.take(TokenKind::KwVar).is_some() {
+        if parser.take(TokenKind::KwFun).is_some() {
+            Self::parse_fun_declaration(parser)
+        } else if parser.take(TokenKind::KwVar).is_some() {
             Self::parse_var_declaration(parser)
         } else {
             Self::parse_statement(parser)
         }
+    }
+
+    fn parse_fun_declaration(parser: &mut impl Parser) -> Result<Statement, ParseError> {
+        let span = parser.begin_span();
+        let name = if let Some(name) = parser.take_if(|v| match v {
+            TokenValue::Identifier(v) => Some(v.to_string()),
+            _ => None,
+        }) {
+            name
+        } else {
+            return Err(parser.error_here(ExpectedToken {
+                token: TokenKind::Identifier,
+                message: "Expect function name.",
+            }));
+        };
+        let span = parser.end_span(span);
+
+        parser.consume(TokenKind::LParen, "Expect '(' after function name.")?;
+        let args = if parser.take(TokenKind::RParen).is_some() {
+            Vec::new()
+        } else {
+            let mut args = Vec::new();
+            loop {
+                let arg_span = parser.begin_span();
+                let arg = parser
+                    .take_if(|v| match v {
+                        TokenValue::Identifier(ident) => Some(ident.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        parser.error_here(ExpectedToken {
+                            token: TokenKind::Identifier,
+                            message: "Expect function argument name.",
+                        })
+                    })?;
+                let arg_span = parser.end_span(arg_span);
+                args.push(Spanned::new(arg_span, arg));
+
+                if parser.take(TokenKind::Comma).is_none() {
+                    break;
+                }
+            }
+
+            parser.consume(TokenKind::RParen, "Expect ')' after function arguments.")?;
+            args
+        };
+        parser.consume(TokenKind::LBrace, "Expect '{' after function arguments.")?;
+        let body_span = parser.begin_span();
+        let body = Self::parse_block(parser)?;
+        let body_span = parser.end_span(body_span);
+        Ok(Statement::FunDeclaration {
+            name: Spanned::new(span, name),
+            args,
+            body: Spanned::new(body_span, Box::new(body)),
+        })
     }
 
     fn parse_var_declaration(parser: &mut impl Parser) -> Result<Statement, ParseError> {

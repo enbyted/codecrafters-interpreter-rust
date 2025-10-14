@@ -62,6 +62,13 @@ pub(crate) enum Instruction {
     Call {
         arity: usize,
     },
+    // +1
+    PushFunction {
+        chunk: Arc<Chunk>,
+        arity: usize,
+        name: String,
+    },
+    Return,
 }
 
 #[derive(Debug, PartialEq)]
@@ -332,6 +339,13 @@ impl<'env> Vm<'env> {
                 Instruction::PushNumber(value) => {
                     self.push_value(Value::Number(*value));
                 }
+                Instruction::PushFunction { chunk, arity, name } => {
+                    self.push_value(Value::Function {
+                        chunk: chunk.clone(),
+                        arity: *arity,
+                        name: name.clone(),
+                    });
+                }
                 Instruction::Print => match self.peek_value(instruction.span())? {
                     Value::String(value) => self.env.print(&value.clone()),
                     Value::Number(value) => self.env.print(&format!("{value}")),
@@ -514,6 +528,9 @@ impl<'env> Vm<'env> {
                         }
                         _ => Err(RuntimeError::new(span, "Expected a function on the stack."))?,
                     }
+                }
+                Instruction::Return => {
+                    self.stack.pop_frame();
                 }
             }
             self.stack.set_pc(self.stack.pc() + 1);
