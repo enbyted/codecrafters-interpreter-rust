@@ -190,7 +190,7 @@ impl Compiler {
     fn find_var_in_scope(&self, name: &str) -> Option<usize> {
         for scope in self.scope.iter().rev() {
             if let Some(index) = scope.resolve_local(name) {
-                return Some(index);
+                return Some(index + 1);
             }
         }
         None

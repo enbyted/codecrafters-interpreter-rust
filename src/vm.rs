@@ -107,6 +107,9 @@ enum Value {
     Bool(bool),
     String(String),
     Number(f64),
+    Script {
+        chunk: Arc<Chunk>,
+    },
     Function {
         chunk: Arc<Chunk>,
         arity: usize,
@@ -123,6 +126,7 @@ impl Value {
             Value::Nil => false,
             Value::Bool(value) => *value,
             Value::String(_) | Value::Number(_) => true,
+            Value::Script { .. } => true,
             Value::Function { .. } => true,
             Value::NativeFunction { .. } => true,
         }
@@ -159,29 +163,105 @@ impl<T> RuntimeErrorExt<T> for Result<T, RuntimeError> {
     }
 }
 
-struct Frame {
-    chunk: Arc<Chunk>,
+struct StackFrame {
     pc: usize,
-    stack: Vec<Value>,
+    bottom_of_stack: usize,
 }
-impl Frame {
-    fn new(chunk: Arc<Chunk>) -> Self {
+
+struct Stack {
+    data: Vec<Value>,
+    frames: Vec<StackFrame>,
+}
+impl Stack {
+    fn new() -> Self {
         Self {
-            chunk,
-            pc: 0,
-            stack: Vec::new(),
+            data: Vec::new(),
+            frames: Vec::new(),
         }
     }
 
-    fn current_instruction(&self) -> Option<&Spanned<Instruction>> {
-        self.chunk.instructions.get(self.pc)
+    fn clear(&mut self) {
+        self.data.clear();
+        self.frames.clear();
+    }
+
+    fn push(&mut self, value: Value) {
+        self.data.push(value);
+    }
+
+    fn pop(&mut self) -> Option<Value> {
+        (!self.is_empty()).then(|| self.data.pop()).flatten()
+    }
+
+    fn get(&self, index: usize) -> Option<&Value> {
+        self.data.get(index + self.bottom_of_stack())
+    }
+
+    fn get_mut(&mut self, index: usize) -> Option<&mut Value> {
+        let bottom_of_stack = self.bottom_of_stack();
+        self.data.get_mut(index + bottom_of_stack)
+    }
+
+    fn current_chunk(&self) -> Option<&Chunk> {
+        self.data.get(self.bottom_of_stack()).and_then(|v| match v {
+            Value::Script { chunk } => Some(chunk.as_ref()),
+            Value::Function { chunk, .. } => Some(chunk.as_ref()),
+            _ => None,
+        })
+    }
+
+    fn pc(&self) -> usize {
+        self.frames.last().map(|frame| frame.pc).unwrap_or(0)
+    }
+
+    fn set_pc(&mut self, pc: usize) {
+        self.frames
+            .last_mut()
+            .expect("At least one frame must be present")
+            .pc = pc;
+    }
+
+    fn slice(&self) -> &[Value] {
+        &self.data[self.bottom_of_stack()..]
+    }
+
+    /// Pops the last frame from the stack.
+    /// Leaves the first value in the frame on top of the stack.
+    fn pop_frame(&mut self) {
+        self.data.truncate(self.bottom_of_stack() + 1);
+        self.frames.pop();
+    }
+
+    /// Pushes a new frame onto the stack.
+    /// It will contain the top `size + 1` values on the stack.
+    fn push_frame(&mut self, size: usize) {
+        assert!(self.data.len() >= size + 1, "Stack is too small");
+        self.frames.push(StackFrame {
+            pc: 0,
+            bottom_of_stack: self.data.len() - size - 1,
+        });
+    }
+
+    fn peek(&self) -> Option<&Value> {
+        (!self.is_empty()).then(|| self.data.last()).flatten()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.data.len() <= self.bottom_of_stack()
+    }
+
+    fn bottom_of_stack(&self) -> usize {
+        self.frames
+            .last()
+            .map(|frame| frame.bottom_of_stack)
+            .unwrap_or(0)
     }
 }
 
 pub struct Vm<'env> {
     env: &'env mut dyn ExecutionEnv,
-    frames: Vec<Frame>,
     globals: HashMap<String, Value>,
+    stack: Stack,
     main_chunk: Arc<Chunk>,
 }
 impl<'env> Vm<'env> {
@@ -189,16 +269,19 @@ impl<'env> Vm<'env> {
         Self {
             env,
             main_chunk: program.main_chunk.clone(),
-            frames: vec![Frame::new(program.main_chunk)],
+            stack: Stack::new(),
             globals: HashMap::new(),
         }
     }
 
     pub fn reset(&mut self) {
-        self.frames.clear();
+        self.stack.clear();
         self.globals.clear();
 
-        self.frames.push(Frame::new(self.main_chunk.clone()));
+        self.stack.push(Value::Script {
+            chunk: self.main_chunk.clone(),
+        });
+        self.stack.push_frame(0);
 
         self.globals.insert(
             "clock".into(),
@@ -217,21 +300,18 @@ impl<'env> Vm<'env> {
     }
 
     fn push_value(&mut self, value: Value) {
-        self.frames
-            .last_mut()
-            .expect("At least one frame must be present")
-            .stack
-            .push(value);
+        self.stack.push(value);
     }
 
     pub fn run(&mut self) -> Result<(), RuntimeError> {
-        while let Some(instruction) = self.frames.last().and_then(Frame::current_instruction) {
+        while let Some(instruction) = self
+            .stack
+            .current_chunk()
+            .and_then(|chunk| chunk.instructions.get(self.stack.pc()))
+        {
             //eprintln!(
             //    "PC = {}, Instruction = {:?}, TOS = {:?}",
-            //    self.frames
-            //        .last()
-            //        .expect("At least one frame must be present")
-            //        .pc,
+            //    self.stack.pc(),
             //    instruction.value(),
             //    self.peek_value(instruction.span())
             //);
@@ -258,6 +338,7 @@ impl<'env> Vm<'env> {
                     Value::Nil => self.env.print("nil"),
                     Value::Bool(true) => self.env.print("true"),
                     Value::Bool(false) => self.env.print("false"),
+                    Value::Script { .. } => self.env.print("<script>"),
                     Value::Function { name, .. } => self.env.print(&format!("<fn {name}>")),
                     Value::NativeFunction { .. } => self.env.print("<native fn>"),
                 },
@@ -366,21 +447,25 @@ impl<'env> Vm<'env> {
                 }
                 Instruction::ReadStackAbsolute(index) => {
                     self.push_value(
-                        self.frames
-                            .last()
-                            .expect("At least one frame must be present")
-                            .stack[*index]
+                        self.stack
+                            .get(*index)
+                            .cloned()
+                            .ok_or_else(|| {
+                                RuntimeError::new(
+                                    instruction.span(),
+                                    format!("Index out of bounds."),
+                                )
+                            })?
                             .clone(),
                     );
                 }
                 Instruction::WriteStackAbsolute(index) => {
                     let index = *index;
-                    let value = self.pop_value(instruction.span())?;
-                    self.frames
-                        .last_mut()
-                        .expect("At least one frame must be present")
-                        .stack[index] = value.clone();
-                    self.push_value(value);
+                    let span = instruction.span();
+                    let value = self.peek_value(span.clone())?;
+                    *self.stack.get_mut(index).ok_or_else(|| {
+                        RuntimeError::new(span, format!("Index out of bounds."))
+                    })? = value.clone();
                 }
                 Instruction::Jump { condition, target } => {
                     let target = *target;
@@ -390,51 +475,48 @@ impl<'env> Vm<'env> {
                         JumpCondition::Falsy => !self.pop_boolean(instruction.span())?,
                     };
                     if should_jump {
-                        self.frames
-                            .last_mut()
-                            .expect("At least one frame must be present")
-                            .pc = target;
+                        self.stack.set_pc(target);
                         continue;
                     }
                 }
                 Instruction::Call { arity } => {
-                    let fun = self.peek_downward(*arity, instruction.span())?;
-                    match fun {
-                        Value::Function { chunk, arity, name } => {
-                            todo!("Support functions");
+                    let span = instruction.span();
+                    let arity = *arity;
+                    self.stack.push_frame(arity);
+                    match self.peek_value_at(0, span.clone())? {
+                        Value::Function {
+                            chunk,
+                            arity: fun_arity,
+                            name,
+                        } => {
+                            if *fun_arity != arity {
+                                Err(RuntimeError::new(
+                                    span,
+                                    "Expected a function with the given arity.",
+                                ))?;
+                            }
+                            continue;
                         }
                         Value::NativeFunction {
                             arity: fun_arity,
                             function,
                         } => {
-                            let arity = *arity;
                             if *fun_arity != arity {
                                 Err(RuntimeError::new(
-                                    instruction.span(),
+                                    span,
                                     "Expected a function with the given arity.",
                                 ))?;
                             }
                             let function = function.clone();
-                            let last_frame = &mut self
-                                .frames
-                                .last_mut()
-                                .expect("Just taken a value from last frame")
-                                .stack;
-                            let result = function.0(&last_frame[last_frame.len() - arity..])?;
-                            last_frame.truncate(last_frame.len() - arity - 1);
-                            self.push_value(result);
+                            let result = function.0(&self.stack.slice()[1..])?;
+                            *self.stack.get_mut(0).expect("Frame always has slot 0") = result;
+                            self.stack.pop_frame();
                         }
-                        _ => Err(RuntimeError::new(
-                            instruction.span(),
-                            "Expected a function on the stack.",
-                        ))?,
+                        _ => Err(RuntimeError::new(span, "Expected a function on the stack."))?,
                     }
                 }
             }
-            self.frames
-                .last_mut()
-                .expect("At least one frame must be present")
-                .pc += 1;
+            self.stack.set_pc(self.stack.pc() + 1);
         }
 
         Ok(())
@@ -469,9 +551,6 @@ impl<'env> Vm<'env> {
 
     fn pop_value(&mut self, span: Span) -> Result<Value, RuntimeError> {
         let value = self
-            .frames
-            .last_mut()
-            .expect("At least one frame must be present")
             .stack
             .pop()
             .ok_or_else(|| RuntimeError::new(span, format!("Expected a value on the stack.")))?;
@@ -479,23 +558,14 @@ impl<'env> Vm<'env> {
     }
 
     fn peek_value(&self, span: Span) -> Result<&Value, RuntimeError> {
-        self.frames
-            .last()
-            .expect("At least one frame must be present")
-            .stack
-            .last()
+        self.stack
+            .peek()
             .ok_or_else(|| RuntimeError::new(span, format!("Expected a value on the stack.")))
     }
 
-    fn peek_downward(&self, offset: usize, span: Span) -> Result<&Value, RuntimeError> {
-        let stack = &self
-            .frames
-            .last()
-            .expect("At least one frame must be present")
-            .stack;
-
-        stack
-            .get(stack.len() - offset - 1)
+    fn peek_value_at(&self, offset: usize, span: Span) -> Result<&Value, RuntimeError> {
+        self.stack
+            .get(offset)
             .ok_or_else(|| RuntimeError::new(span, format!("Expected a value on the stack.")))
     }
 }
