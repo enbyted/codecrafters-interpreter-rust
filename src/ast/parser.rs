@@ -2,7 +2,10 @@ use std::{error::Error, iter::Peekable};
 
 use thiserror::Error;
 
-use crate::lexer::{LexerError, Span, Token, TokenKind, TokenValue};
+use crate::{
+    ast::Spanned,
+    lexer::{LexerError, Span, Token, TokenKind, TokenValue},
+};
 
 #[derive(Debug, Clone, PartialEq, Error)]
 #[error("Expect '{}' {message}.", token.symbol())]
@@ -70,6 +73,16 @@ pub(super) trait Parser {
             range: span.start..cur.span().end(),
             line_start: span.line,
         }
+    }
+
+    fn spanned<T, E>(
+        &mut self,
+        fun: impl FnOnce(&mut Self) -> Result<T, E>,
+    ) -> Result<Spanned<T>, E> {
+        let span = self.begin_span();
+        let value = fun(self)?;
+        let span = self.end_span(span);
+        Ok(Spanned::new(span, value))
     }
 
     fn take(&mut self, kind: TokenKind) -> Option<TokenValue> {

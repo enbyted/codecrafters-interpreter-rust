@@ -58,6 +58,7 @@ pub enum Statement {
         increment: Option<Spanned<Expression>>,
         body: Spanned<Box<Statement>>,
     },
+    Return(Option<Spanned<Expression>>),
 }
 impl Statement {
     pub(super) fn compile(self, span: Span, compiler: &mut Compiler) {
@@ -91,6 +92,7 @@ impl Statement {
                     inner.declare_variable(Spanned::new(arg.span(), &arg.value));
                 }
                 body.value.compile(body.span.clone(), &mut inner);
+                inner.push(body.span.clone(), vm::Instruction::PushNil);
                 inner.push(body.span, vm::Instruction::Return);
                 inner.exit_scope();
                 let chunk = inner.into_chunk();
@@ -166,6 +168,14 @@ impl Statement {
                 }
 
                 compiler.exit_scope();
+            }
+            Statement::Return(expr) => {
+                if let Some(expr) = expr {
+                    expr.value.compile(expr.span, compiler);
+                } else {
+                    compiler.push(span.clone(), vm::Instruction::PushNil);
+                }
+                compiler.push(span, vm::Instruction::Return);
             }
         }
     }
@@ -271,6 +281,8 @@ impl Statement {
     fn parse_statement(parser: &mut impl Parser) -> Result<Statement, ParseError> {
         if parser.take(TokenKind::KwPrint).is_some() {
             Self::parse_print(parser)
+        } else if parser.take(TokenKind::KwReturn).is_some() {
+            Self::parse_return(parser)
         } else if parser.take(TokenKind::KwWhile).is_some() {
             Self::parse_while(parser)
         } else if parser.take(TokenKind::KwFor).is_some() {
@@ -282,6 +294,17 @@ impl Statement {
         } else {
             Self::parse_expr(parser)
         }
+    }
+
+    fn parse_return(parser: &mut impl Parser) -> Result<Statement, ParseError> {
+        let expr = if parser.take(TokenKind::Semicolon).is_some() {
+            None
+        } else {
+            let expr = parser.spanned(Expression::parse)?;
+            parser.consume(TokenKind::Semicolon, "Expect ';' after return value.")?;
+            Some(expr)
+        };
+        Ok(Statement::Return(expr))
     }
 
     fn parse_if(parser: &mut impl Parser) -> Result<Statement, ParseError> {

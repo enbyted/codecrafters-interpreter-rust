@@ -530,6 +530,12 @@ impl<'env> Vm<'env> {
                     }
                 }
                 Instruction::Return => {
+                    let span = instruction.span();
+                    if let Some(value) = self.stack.pop() {
+                        *self.stack.get_mut(0).ok_or_else(|| {
+                            RuntimeError::new(span, format!("Expected a value on the stack."))
+                        })? = value;
+                    }
                     self.stack.pop_frame();
                 }
             }
