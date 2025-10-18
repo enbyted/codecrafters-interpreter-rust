@@ -1,6 +1,31 @@
+fun write(value) {
+    print "Value: ";
+    print value;
+}
+
+fun check(value) {
+    if (value == nil) {
+        print "nil";
+        return 0;
+    } else if (value == 0) {
+        print "zero";
+        return 1;
+    } else {
+        print "other";
+        return 2;
+    }
+}
+
+print check(nil);
+print check(0);
+print check("abc");
+
+var _start = clock();
+write(_start);
 var hello = "global";
 var cnt = "global";
-for(var cnt = 0; cnt < 3; cnt = cnt + 1) print cnt;
+write(hello);
+for(var cnt = 0; cnt < 3;) print cnt = cnt + 1;
 print cnt;
 {
 var hello;
@@ -50,3 +75,7 @@ print  1 == 2 ;
 print  1 != 2 ;
 
 print "a" + "b";
+
+var _end = clock();
+print "Took ";
+print _end - _start;

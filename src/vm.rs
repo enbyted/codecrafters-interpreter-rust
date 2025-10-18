@@ -95,6 +95,13 @@ impl Program {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct Function {
+    pub chunk: Arc<Chunk>,
+    pub arity: usize,
+    pub name: String,
+}
+
 #[derive(Clone)]
 struct NativeFn(Arc<dyn Fn(&[Value]) -> Result<Value, RuntimeError>>);
 impl std::fmt::Debug for NativeFn {
@@ -114,18 +121,10 @@ enum Value {
     Bool(bool),
     String(String),
     Number(f64),
-    Script {
-        chunk: Arc<Chunk>,
-    },
-    Function {
-        chunk: Arc<Chunk>,
-        arity: usize,
-        name: String,
-    },
-    NativeFunction {
-        arity: usize,
-        function: NativeFn,
-    },
+    Script { chunk: Arc<Chunk> },
+    Function(Function),
+    NativeFunction { arity: usize, function: NativeFn },
+    Closure { function: Function },
 }
 impl Value {
     fn truthy(&self) -> bool {
@@ -136,6 +135,7 @@ impl Value {
             Value::Script { .. } => true,
             Value::Function { .. } => true,
             Value::NativeFunction { .. } => true,
+            Value::Closure { .. } => true,
         }
     }
 }
@@ -212,7 +212,7 @@ impl Stack {
     fn current_chunk(&self) -> Option<&Chunk> {
         self.data.get(self.bottom_of_stack()).and_then(|v| match v {
             Value::Script { chunk } => Some(chunk.as_ref()),
-            Value::Function { chunk, .. } => Some(chunk.as_ref()),
+            Value::Function(func) => Some(func.chunk.as_ref()),
             _ => None,
         })
     }
@@ -340,11 +340,11 @@ impl<'env> Vm<'env> {
                     self.push_value(Value::Number(*value));
                 }
                 Instruction::PushFunction { chunk, arity, name } => {
-                    self.push_value(Value::Function {
+                    self.push_value(Value::Function(Function {
                         chunk: chunk.clone(),
                         arity: *arity,
                         name: name.clone(),
-                    });
+                    }));
                 }
                 Instruction::Print => match self.peek_value(instruction.span())? {
                     Value::String(value) => self.env.print(&value.clone()),
@@ -353,8 +353,11 @@ impl<'env> Vm<'env> {
                     Value::Bool(true) => self.env.print("true"),
                     Value::Bool(false) => self.env.print("false"),
                     Value::Script { .. } => self.env.print("<script>"),
-                    Value::Function { name, .. } => self.env.print(&format!("<fn {name}>")),
+                    Value::Function(func) => self.env.print(&format!("<fn {}>", func.name)),
                     Value::NativeFunction { .. } => self.env.print("<native fn>"),
+                    Value::Closure { function, .. } => {
+                        self.env.print(&format!("<fn {}>", function.name))
+                    }
                 },
                 Instruction::Pop => {
                     self.pop_value(instruction.span())?;
@@ -498,12 +501,8 @@ impl<'env> Vm<'env> {
                     let arity = *arity;
                     self.stack.push_frame(arity);
                     match self.peek_value_at(0, span.clone())? {
-                        Value::Function {
-                            chunk,
-                            arity: fun_arity,
-                            name,
-                        } => {
-                            if *fun_arity != arity {
+                        Value::Function(func) => {
+                            if func.arity != arity {
                                 Err(RuntimeError::new(
                                     span,
                                     "Expected a function with the given arity.",

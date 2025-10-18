@@ -1,0 +1,11 @@
+// The logical AND operator should return the
+// first falsy value
+if (false and "bad") print "hello";
+if (nil and "bad") print "hello";
+
+// If all values are truthy, it returns the last
+// value
+if (true and "baz") print "baz";
+if (72 and "world") print "world";
+if ("world" and "world") print "world";
+if ("" and "quz") print "quz";
